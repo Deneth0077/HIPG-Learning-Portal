@@ -679,7 +679,7 @@ export default function UnifiedCurriculumManagerPage() {
                     {m.lessons && m.lessons.length > 0 ? (
                       m.lessons.map((les, lIdx) => (
                         <div
-                          key={les.id || lIdx}
+                          key={`${m.id || 'm'}-${les.id || les._id || 'l'}-${lIdx}`}
                           className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-[#F8FAFC] transition-colors"
                         >
                           {/* Lesson Info */}

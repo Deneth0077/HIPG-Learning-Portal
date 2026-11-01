@@ -226,7 +226,7 @@ function VideoLessonContent() {
                     {/* Module Lessons */}
                     {isExpanded && (
                       <div className="bg-[#F8FAFC] py-1 border-t border-[#E2E8F0]">
-                        {(module.lessons || []).map((les) => {
+                        {(module.lessons || []).map((les, lIdx) => {
                           const isActive =
                             currentLesson &&
                             (currentLesson.id === les.id ||
@@ -235,7 +235,7 @@ function VideoLessonContent() {
 
                           return (
                             <Link
-                              key={les.id || les.slug}
+                              key={`${module.id || 'mod'}-${les.id || les.slug || 'les'}-${lIdx}`}
                               href={`/systems/${systemId}/lessons/${les.slug || les.id}`}
                               className={`flex items-center gap-2.5 px-6 py-2.5 text-xs transition-colors ${
                                 isActive

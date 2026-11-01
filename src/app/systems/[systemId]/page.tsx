@@ -226,9 +226,9 @@ function SystemDetailContent() {
                     {/* Module Lessons List */}
                     {isExpanded && (
                       <div className="divide-y divide-[#F1F5F9] bg-white">
-                        {module.lessons.map((lesson) => (
+                        {module.lessons.map((lesson, lIdx) => (
                           <div
-                            key={lesson.id}
+                            key={`${module.id}-${lesson.id || lIdx}-${lIdx}`}
                             className="px-6 py-3 flex items-center justify-between hover:bg-[#F8FAFC] transition-colors"
                           >
                             <div className="flex items-center gap-3.5 min-w-0">
