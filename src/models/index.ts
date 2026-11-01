@@ -106,6 +106,8 @@ export interface ILessonStep {
   title: string;
   instruction: string;
   highlightText?: string;
+  imageUrl?: string;
+  imageDriveId?: string;
   uiMockType?: string;
 }
 
@@ -130,6 +132,9 @@ export interface ILesson extends Document {
   videoDriveId?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
+  imageUrl?: string;
+  manualContent?: string;
+  manualSteps?: ILessonStep[];
   sections?: ILessonSection[];
   learningObjectives?: string[];
   createdAt: Date;
@@ -150,6 +155,9 @@ const LessonSchema = new Schema<ILesson>(
     videoDriveId: { type: String },
     videoUrl: { type: String },
     thumbnailUrl: { type: String },
+    imageUrl: { type: String },
+    manualContent: { type: String, default: '' },
+    manualSteps: { type: Array, default: [] },
     sections: { type: Array, default: [] },
     learningObjectives: { type: [String], default: [] },
   },

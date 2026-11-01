@@ -30,14 +30,24 @@ export async function GET(
 
   try {
     const range = req.headers.get('range');
+    
+    // Fetch file metadata to determine exact MIME type
+    let mimeType = 'video/mp4';
+    try {
+      const meta = await drive.files.get({ fileId, fields: 'mimeType' });
+      if (meta.data.mimeType) mimeType = meta.data.mimeType;
+    } catch {
+      // fallback to video/mp4
+    }
+
     const response = await drive.files.get(
       { fileId, alt: 'media' },
       { responseType: 'stream', headers: range ? { Range: range } : {} }
     );
 
     const headers = new Headers();
-    headers.set('Content-Type', 'video/mp4');
-    headers.set('Content-Disposition', 'inline'); // Force inline playback, no download dialog
+    headers.set('Content-Type', mimeType);
+    headers.set('Content-Disposition', 'inline'); // Force inline display/playback
     headers.set('X-Content-Type-Options', 'nosniff');
     headers.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
 

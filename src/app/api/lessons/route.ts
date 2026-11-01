@@ -15,11 +15,14 @@ const LessonSchema = z.object({
   order: z.string().default('1.1'),
   displayOrder: z.number().default(0),
   isPublished: z.boolean().default(true),
-  videoDriveId: z.string().optional(),
-  videoUrl: z.string().optional(),
-  thumbnailUrl: z.string().optional(),
-  sections: z.array(z.any()).optional(),
-  learningObjectives: z.array(z.string()).optional(),
+  videoDriveId: z.string().optional().nullable(),
+  videoUrl: z.string().optional().nullable(),
+  thumbnailUrl: z.string().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
+  manualContent: z.string().optional().nullable(),
+  manualSteps: z.array(z.any()).optional().nullable(),
+  sections: z.array(z.any()).optional().nullable(),
+  learningObjectives: z.array(z.string()).optional().nullable(),
 });
 
 // GET /api/lessons - Query lessons
@@ -59,7 +62,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, lesson: { ...result.data, _id: 'mock-' + Date.now() } });
     }
 
-    const newLesson = await LessonModel.create(result.data);
+    const newLesson: any = await LessonModel.create(result.data as any);
     await AuditLogModel.create({
       adminId: adminCheck.userId,
       adminUsername: adminCheck.username,
