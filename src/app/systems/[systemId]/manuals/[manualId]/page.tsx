@@ -18,6 +18,7 @@ import { MANUAL_CARGO_ID } from '@/data/portalData';
 
 function UserManualContent() {
   const params = useParams();
+  const systemId = ((params?.systemId as string) || 'btos').toLowerCase();
   const [activeSectionId, setActiveSectionId] = useState<string>('sec-5');
 
   const activeSection =
@@ -26,16 +27,16 @@ function UserManualContent() {
   return (
     <MainLayout>
       <div className="space-y-4">
-        {/* Breadcrumb matching Reference Image 3 */}
+        {/* Dynamic Breadcrumb */}
         <div className="flex items-center gap-2 text-xs font-semibold text-[#64748B]">
-          <Link href="/systems/btos" className="text-[#1266D5] hover:underline flex items-center gap-1">
+          <Link href={`/systems/${systemId}`} className="text-[#1266D5] hover:underline flex items-center gap-1 font-bold">
             <ChevronLeft size={14} />
-            <span>BTOS</span>
+            <span>{systemId.toUpperCase()}</span>
           </Link>
           <span>&gt;</span>
           <span className="text-[#1266D5]">User Manual</span>
           <span>&gt;</span>
-          <span className="text-[#082B4C] font-bold">Cargo ID Generation</span>
+          <span className="text-[#082B4C] font-bold">{activeSection.title}</span>
         </div>
 
         {/* 2-Column Manual Layout: Left TOC Sidebar + Main Documentation */}
