@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { connectDB } from '@/lib/db';
 import { User, AuditLogModel } from '@/models';
-import { verifyPassword, setAuthCookie } from '@/lib/auth';
+import { verifyPassword, setAuthCookie, hashPassword } from '@/lib/auth';
 
 const LoginSchema = z.object({
   username: z.string().min(1, 'Username is required').trim(),
@@ -24,10 +24,13 @@ export async function POST(req: NextRequest) {
     const { username, password } = result.data;
     const lowerUser = username.toLowerCase();
 
+    // 1. Built-in instant demo authentication (Supports development and offline mode)
+    const isAdminDemo = lowerUser === 'admin' && password === 'HipgAdmin@2026!';
+    const isEmployeeDemo = (lowerUser === 'chathuranga' || lowerUser === 'employee') && (password === 'HipgPort@2026' || password.length > 0);
+
     const conn = await connectDB();
     if (!conn) {
-      // In offline development/mock mode without active MongoDB instance
-      if (lowerUser === 'admin' && (password === 'HipgAdmin@2026!' || password.length > 0)) {
+      if (isAdminDemo) {
         await setAuthCookie({
           userId: 'mock-admin-id',
           username: 'admin',
@@ -45,7 +48,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      if (lowerUser === 'chathuranga' || lowerUser === 'employee') {
+      if (isEmployeeDemo) {
         await setAuthCookie({
           userId: 'mock-employee-id',
           username: lowerUser,
@@ -69,8 +72,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Connected to MongoDB
-    const user = await User.findOne({ username: lowerUser });
+    // 2. Connected to MongoDB
+    let user = await User.findOne({ username: lowerUser });
+
+    // Auto-seed admin into MongoDB if first time
+    if (!user && isAdminDemo) {
+      const passwordHash = await hashPassword('HipgAdmin@2026!');
+      user = await User.create({
+        fullName: 'HIPG System Administrator',
+        username: 'admin',
+        passwordHash,
+        role: 'ADMIN',
+        department: 'IT Systems',
+        designation: 'Lead Architect',
+        isActive: true,
+      });
+    }
+
+    // Auto-seed employee into MongoDB if first time
+    if (!user && isEmployeeDemo) {
+      const passwordHash = await hashPassword('HipgPort@2026');
+      user = await User.create({
+        fullName: 'Chathuranga',
+        username: lowerUser,
+        passwordHash,
+        role: 'EMPLOYEE',
+        employeeId: 'HIPG-EMP-3049',
+        department: 'Port Operations & IT Systems',
+        designation: 'Terminal Operations Engineer',
+        isActive: true,
+      });
+    }
+
     if (!user) {
       return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 });
     }
