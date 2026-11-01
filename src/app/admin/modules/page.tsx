@@ -27,10 +27,34 @@ import {
   Eye,
   Loader2,
   HelpCircle,
-  Sparkles
+  Sparkles,
+  Zap
 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { SYSTEMS_DATA, BTOS_MODULES, ALL_SYSTEM_MODULES, MANUAL_CARGO_ID } from '@/data/portalData';
+
+interface UploadMetrics {
+  percent: number;
+  speed: string;
+  uploadedFormatted: string;
+  totalFormatted: string;
+  etaFormatted: string;
+  isFinalizing: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatSpeed(bytesPerSec: number): string {
+  if (!bytesPerSec || bytesPerSec <= 0) return '0 KB/s';
+  if (bytesPerSec < 1024) return `${Math.round(bytesPerSec)} B/s`;
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(2)} MB/s`;
+}
 
 interface ManualStep {
   stepNumber: number;
@@ -97,8 +121,17 @@ export default function UnifiedCurriculumManagerPage() {
   const [uploadingDriveFile, setUploadingDriveFile] = useState(false);
   const [videoUploadSuccess, setVideoUploadSuccess] = useState(false);
   const [uploadFileName, setUploadFileName] = useState('');
+  const [videoMetrics, setVideoMetrics] = useState<UploadMetrics>({
+    percent: 0,
+    speed: '0 KB/s',
+    uploadedFormatted: '0 MB',
+    totalFormatted: '0 MB',
+    etaFormatted: '',
+    isFinalizing: false,
+  });
   const [uploadingStepImageIdx, setUploadingStepImageIdx] = useState<number | null>(null);
   const [stepUploadSuccessIdx, setStepUploadSuccessIdx] = useState<number | null>(null);
+  const [stepMetrics, setStepMetrics] = useState<Record<number, UploadMetrics>>({});
   const [statusAlert, setStatusAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
 
@@ -366,14 +399,22 @@ export default function UnifiedCurriculumManagerPage() {
     setTimeout(() => setStatusAlert(null), 3000);
   };
 
-  // Upload video directly into Google Drive System/Module folder
-  const handleDirectDriveVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload video directly into Google Drive System/Module folder with real-time speed tracking
+  const handleDirectDriveVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeEditor) return;
 
     setUploadingDriveFile(true);
     setVideoUploadSuccess(false);
     setUploadFileName(file.name);
+    setVideoMetrics({
+      percent: 0,
+      speed: 'Calculating...',
+      uploadedFormatted: '0 MB',
+      totalFormatted: formatBytes(file.size),
+      etaFormatted: 'estimating...',
+      isFinalizing: false,
+    });
 
     const formData = new FormData();
     formData.append('file', file);
@@ -381,40 +422,80 @@ export default function UnifiedCurriculumManagerPage() {
     formData.append('moduleName', activeEditor.moduleTitle);
     formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
 
-    try {
-      const res = await fetch('/api/admin/drive/module-upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (res.ok && data.fileId) {
-        setLessonFormData((prev) => ({
-          ...prev,
-          videoDriveId: data.fileId,
-        }));
-        setVideoUploadSuccess(true);
-        setStatusAlert({
-          message: `Video "${file.name}" uploaded successfully to Google Drive folder "${selectedSystem.toUpperCase()} / ${activeEditor.moduleTitle}"!`,
-          type: 'success',
+    const startTime = Date.now();
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/admin/drive/module-upload');
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        const now = Date.now();
+        const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+        const totalElapsed = (now - startTime) / 1000;
+        const currentSpeed = totalElapsed > 0.3 ? event.loaded / totalElapsed : 0;
+        const remainingBytes = event.total - event.loaded;
+        const etaSeconds = currentSpeed > 0 ? Math.round(remainingBytes / currentSpeed) : 0;
+
+        setVideoMetrics({
+          percent,
+          speed: currentSpeed > 0 ? formatSpeed(currentSpeed) : 'Calculating...',
+          uploadedFormatted: formatBytes(event.loaded),
+          totalFormatted: formatBytes(event.total),
+          etaFormatted: etaSeconds > 0 ? `${etaSeconds}s remaining` : 'almost done',
+          isFinalizing: percent >= 98,
         });
-        setTimeout(() => setStatusAlert(null), 5000);
-      } else {
-        alert(data.error || 'Drive video upload error');
       }
-    } catch {
-      alert('Failed to connect to Google Drive API');
-    } finally {
+    };
+
+    xhr.onload = () => {
       setUploadingDriveFile(false);
-    }
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && data.fileId) {
+          setVideoMetrics((prev) => ({ ...prev, percent: 100, isFinalizing: false }));
+          setLessonFormData((prev) => ({
+            ...prev,
+            videoDriveId: data.fileId,
+          }));
+          setVideoUploadSuccess(true);
+          setStatusAlert({
+            message: `Video "${file.name}" uploaded successfully to Google Drive folder "${selectedSystem.toUpperCase()} / ${activeEditor.moduleTitle}"!`,
+            type: 'success',
+          });
+          setTimeout(() => setStatusAlert(null), 5000);
+        } else {
+          alert(data.error || 'Drive video upload error');
+        }
+      } catch {
+        alert('Failed to parse upload response from server');
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadingDriveFile(false);
+      alert('Failed to connect to Google Drive API');
+    };
+
+    xhr.send(formData);
   };
 
-  // Upload step screenshot directly into Google Drive under module folder
-  const handleStepImageUpload = async (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload step screenshot directly into Google Drive under module folder with real-time speed tracking
+  const handleStepImageUpload = (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeEditor) return;
 
     setUploadingStepImageIdx(idx);
     setStepUploadSuccessIdx(null);
+    setStepMetrics((prev) => ({
+      ...prev,
+      [idx]: {
+        percent: 0,
+        speed: 'Calculating...',
+        uploadedFormatted: '0 B',
+        totalFormatted: formatBytes(file.size),
+        etaFormatted: 'estimating...',
+        isFinalizing: false,
+      },
+    }));
 
     const formData = new FormData();
     formData.append('file', file);
@@ -422,37 +503,72 @@ export default function UnifiedCurriculumManagerPage() {
     formData.append('moduleName', activeEditor.moduleTitle);
     formData.append('title', `${lessonFormData.title || 'Step'} - Step ${idx + 1}`);
 
-    try {
-      const res = await fetch('/api/admin/drive/module-upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (res.ok && data.fileId) {
-        const streamUrl = `/api/video/stream/${data.fileId}`;
-        setLessonFormData((prev) => {
-          const steps = [...prev.manualSteps];
-          steps[idx] = {
-            ...steps[idx],
-            imageUrl: streamUrl,
-            imageDriveId: data.fileId,
-          };
-          return { ...prev, manualSteps: steps };
-        });
-        setStepUploadSuccessIdx(idx);
-        setStatusAlert({
-          message: `Screenshot for Step ${idx + 1} uploaded successfully to Google Drive!`,
-          type: 'success',
-        });
-        setTimeout(() => setStatusAlert(null), 4000);
-      } else {
-        alert(data.error || 'Failed to upload screenshot');
+    const startTime = Date.now();
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/admin/drive/module-upload');
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        const now = Date.now();
+        const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+        const totalElapsed = (now - startTime) / 1000;
+        const currentSpeed = totalElapsed > 0.2 ? event.loaded / totalElapsed : 0;
+        const remainingBytes = event.total - event.loaded;
+        const etaSeconds = currentSpeed > 0 ? Math.round(remainingBytes / currentSpeed) : 0;
+
+        setStepMetrics((prev) => ({
+          ...prev,
+          [idx]: {
+            percent,
+            speed: currentSpeed > 0 ? formatSpeed(currentSpeed) : 'Calculating...',
+            uploadedFormatted: formatBytes(event.loaded),
+            totalFormatted: formatBytes(event.total),
+            etaFormatted: etaSeconds > 0 ? `${etaSeconds}s remaining` : 'almost done',
+            isFinalizing: percent >= 98,
+          },
+        }));
       }
-    } catch {
-      alert('Failed to upload image to Google Drive');
-    } finally {
+    };
+
+    xhr.onload = () => {
       setUploadingStepImageIdx(null);
-    }
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300 && data.fileId) {
+          const streamUrl = `/api/video/stream/${data.fileId}`;
+          setLessonFormData((prev) => {
+            const steps = [...prev.manualSteps];
+            steps[idx] = {
+              ...steps[idx],
+              imageUrl: streamUrl,
+              imageDriveId: data.fileId,
+            };
+            return { ...prev, manualSteps: steps };
+          });
+          setStepMetrics((prev) => ({
+            ...prev,
+            [idx]: { ...(prev[idx] || {}), percent: 100, isFinalizing: false },
+          }));
+          setStepUploadSuccessIdx(idx);
+          setStatusAlert({
+            message: `Screenshot for Step ${idx + 1} uploaded successfully to Google Drive!`,
+            type: 'success',
+          });
+          setTimeout(() => setStatusAlert(null), 4000);
+        } else {
+          alert(data.error || 'Failed to upload screenshot');
+        }
+      } catch {
+        alert('Failed to parse upload response from server');
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadingStepImageIdx(null);
+      alert('Failed to upload image to Google Drive');
+    };
+
+    xhr.send(formData);
   };
 
   // Step instruction helpers
@@ -947,23 +1063,41 @@ export default function UnifiedCurriculumManagerPage() {
                         </p>
                       </div>
 
-                      {/* Loading Progress Effect */}
+                      {/* Loading Progress & Speed Indicator */}
                       {uploadingDriveFile && (
-                        <div className="p-4 rounded-2xl bg-blue-50/90 border border-blue-200 text-center space-y-2.5 max-w-md mx-auto animate-pulse">
-                          <div className="flex items-center justify-center gap-2 text-[#1266D5] font-bold text-xs">
-                            <Loader2 size={18} className="animate-spin text-[#1266D5]" />
-                            <span>Uploading video directly into Google Drive...</span>
-                          </div>
-                          <p className="text-[11px] text-[#475569]">
-                            Saving in: <strong className="font-mono text-[#082B4C]">{selectedSystem.toUpperCase()} / {activeEditor.moduleTitle}</strong>
-                          </p>
-                          {uploadFileName && (
-                            <span className="text-[10.5px] font-mono text-[#1E3A8A] bg-blue-100/60 px-3 py-1 rounded-full inline-block truncate max-w-xs">
-                              {uploadFileName}
+                        <div className="p-4 rounded-2xl bg-white border-2 border-[#1266D5] text-left space-y-3 max-w-lg mx-auto shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-[#082B4C] font-bold text-xs">
+                              <Loader2 size={16} className="animate-spin text-[#1266D5]" />
+                              <span>
+                                {videoMetrics.isFinalizing
+                                  ? 'Finalizing & Syncing with Google Drive...'
+                                  : 'Uploading Video to Google Drive...'}
+                              </span>
+                            </div>
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-50 text-[#1266D5] border border-blue-200 shadow-xs">
+                              <Zap size={12} className="text-amber-500 fill-amber-500" />
+                              <span>{videoMetrics.speed}</span>
                             </span>
-                          )}
-                          <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-[#1266D5] w-3/4 rounded-full animate-pulse"></div>
+                          </div>
+
+                          {/* Progress Bar with Percentage & Transferred Bytes */}
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-[11px] font-semibold text-[#64748B]">
+                              <span>{videoMetrics.uploadedFormatted} of {videoMetrics.totalFormatted}</span>
+                              <span className="font-mono font-black text-[#1266D5]">{videoMetrics.percent}%</span>
+                            </div>
+                            <div className="w-full h-2.5 bg-blue-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-[#1266D5] to-[#38BDF8] rounded-full transition-all duration-150"
+                                style={{ width: `${Math.max(5, videoMetrics.percent)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-[#64748B] pt-1 border-t border-[#F1F5F9]">
+                            <span className="truncate max-w-[220px] font-mono text-[#334155]">{uploadFileName}</span>
+                            <span className="text-emerald-700 font-bold shrink-0">{videoMetrics.etaFormatted}</span>
                           </div>
                         </div>
                       )}
@@ -1153,13 +1287,34 @@ export default function UnifiedCurriculumManagerPage() {
 
                               {/* Loading progress effect when this step is uploading */}
                               {uploadingStepImageIdx === idx && (
-                                <div className="p-4 rounded-xl bg-blue-50/90 border border-blue-200 flex items-center gap-3 animate-pulse">
-                                  <Loader2 size={20} className="animate-spin text-[#1266D5] shrink-0" />
-                                  <div className="flex-1 min-w-0">
-                                    <span className="font-bold text-xs text-[#082B4C] block">Uploading Screenshot directly to Google Drive...</span>
-                                    <span className="text-[11px] text-[#64748B] block truncate">
-                                      Destination: <strong className="font-mono text-[#1266D5]">{selectedSystem.toUpperCase()} / {activeEditor.moduleTitle}</strong>
+                                <div className="p-3.5 rounded-xl bg-white border-2 border-[#1266D5] shadow-xs space-y-2.5">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-[#082B4C] font-bold text-xs">
+                                      <Loader2 size={16} className="animate-spin text-[#1266D5]" />
+                                      <span>
+                                        {stepMetrics[idx]?.isFinalizing
+                                          ? 'Finalizing with Google Drive...'
+                                          : 'Uploading Screenshot to Google Drive...'}
+                                      </span>
+                                    </div>
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-50 text-[#1266D5] border border-blue-200 shadow-xs">
+                                      <Zap size={12} className="text-amber-500 fill-amber-500" />
+                                      <span>{stepMetrics[idx]?.speed || 'Calculating...'}</span>
                                     </span>
+                                  </div>
+
+                                  {/* Progress bar */}
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between text-[10.5px] font-semibold text-[#64748B]">
+                                      <span>{stepMetrics[idx]?.uploadedFormatted || '0 B'} of {stepMetrics[idx]?.totalFormatted || '0 B'}</span>
+                                      <span className="font-mono font-bold text-[#1266D5]">{stepMetrics[idx]?.percent || 0}%</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-[#1266D5] to-[#38BDF8] rounded-full transition-all duration-150"
+                                        style={{ width: `${Math.max(5, stepMetrics[idx]?.percent || 0)}%` }}
+                                      ></div>
+                                    </div>
                                   </div>
                                 </div>
                               )}
