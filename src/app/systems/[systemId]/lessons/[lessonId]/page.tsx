@@ -27,7 +27,7 @@ import {
   Info
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { BTOS_MODULES, SYSTEMS_DATA, MANUAL_CARGO_ID } from '@/data/portalData';
+import { BTOS_MODULES, ALL_SYSTEM_MODULES, SYSTEMS_DATA, MANUAL_CARGO_ID } from '@/data/portalData';
 
 interface ManualStep {
   stepNumber: number;
@@ -93,7 +93,7 @@ function VideoLessonContent() {
           loadedMods = data.modules;
           setModules(data.modules);
         } else {
-          loadedMods = systemId === 'btos' ? (BTOS_MODULES as any) : [];
+          loadedMods = (ALL_SYSTEM_MODULES[systemId] || []) as any;
           setModules(loadedMods);
         }
 
@@ -144,7 +144,7 @@ function VideoLessonContent() {
           }
         }
       } catch {
-        const fallback = systemId === 'btos' ? (BTOS_MODULES as any) : [];
+        const fallback = (ALL_SYSTEM_MODULES[systemId] || []) as any;
         setModules(fallback);
         if (fallback[0]?.lessons?.[0]) {
           setCurrentModule(fallback[0]);

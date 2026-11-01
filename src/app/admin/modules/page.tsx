@@ -30,7 +30,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { SYSTEMS_DATA, BTOS_MODULES, MANUAL_CARGO_ID } from '@/data/portalData';
+import { SYSTEMS_DATA, BTOS_MODULES, ALL_SYSTEM_MODULES, MANUAL_CARGO_ID } from '@/data/portalData';
 
 interface ManualStep {
   stepNumber: number;
@@ -133,12 +133,10 @@ export default function UnifiedCurriculumManagerPage() {
       if (data.modules && data.modules.length > 0) {
         setModules(data.modules);
       } else {
-        if (selectedSystem === 'btos') setModules(BTOS_MODULES as any);
-        else setModules([]);
+        setModules((ALL_SYSTEM_MODULES[selectedSystem] || []) as any);
       }
     } catch {
-      if (selectedSystem === 'btos') setModules(BTOS_MODULES as any);
-      else setModules([]);
+      setModules((ALL_SYSTEM_MODULES[selectedSystem] || []) as any);
     } finally {
       setLoading(false);
     }

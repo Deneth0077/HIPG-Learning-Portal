@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { SystemIcon } from '@/components/common/SystemIcon';
-import { SYSTEMS_DATA, BTOS_MODULES } from '@/data/portalData';
+import { SYSTEMS_DATA, BTOS_MODULES, ALL_SYSTEM_MODULES } from '@/data/portalData';
 
 interface Lesson {
   id: string;
@@ -87,13 +87,11 @@ function SystemDetailContent() {
             setExpandedModules((prev) => ({ ...prev, [data.modules[0].id]: true }));
           }
         } else {
-          if (systemId === 'btos') setModules(BTOS_MODULES as any);
-          else setModules([]);
+          setModules((ALL_SYSTEM_MODULES[systemId] || []) as any);
         }
       })
       .catch(() => {
-        if (systemId === 'btos') setModules(BTOS_MODULES as any);
-        else setModules([]);
+        setModules((ALL_SYSTEM_MODULES[systemId] || []) as any);
       })
       .finally(() => setLoading(false));
   }, [systemId]);

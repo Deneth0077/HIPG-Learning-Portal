@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { User, SystemModel, ModuleModel, LessonModel } from '@/models';
 import { hashPassword } from '@/lib/auth';
-import { SYSTEMS_DATA, BTOS_MODULES, MANUAL_CARGO_ID } from '@/data/portalData';
+import { SYSTEMS_DATA, BTOS_MODULES, ALL_SYSTEM_MODULES, MANUAL_CARGO_ID } from '@/data/portalData';
 
 export async function POST() {
   try {
@@ -72,42 +72,44 @@ export async function POST() {
       }
     }
 
-    // 4. Seed BTOS Modules & Lessons
-    for (let mIdx = 0; mIdx < BTOS_MODULES.length; mIdx++) {
-      const m = BTOS_MODULES[mIdx];
-      let dbMod = await ModuleModel.findOne({ systemId: 'btos', slug: m.id });
-      if (!dbMod) {
-        dbMod = await ModuleModel.create({
-          systemId: 'btos',
-          moduleNumber: m.moduleNumber,
-          title: m.title,
-          slug: m.id,
-          displayOrder: mIdx,
-          isPublished: true,
-        });
-      }
-
-      for (let lIdx = 0; lIdx < m.lessons.length; lIdx++) {
-        const l = m.lessons[lIdx];
-        const existingLesson = await LessonModel.findOne({ systemId: 'btos', slug: l.id });
-        if (!existingLesson) {
-          await LessonModel.create({
-            systemId: 'btos',
-            moduleId: m.id,
-            title: l.title,
-            slug: l.id,
-            description: l.description,
-            duration: l.duration,
-            order: l.order,
-            displayOrder: lIdx,
+    // 4. Seed Modules & Lessons for All Systems
+    for (const [sysKey, modulesList] of Object.entries(ALL_SYSTEM_MODULES)) {
+      for (let mIdx = 0; mIdx < modulesList.length; mIdx++) {
+        const m = modulesList[mIdx];
+        let dbMod = await ModuleModel.findOne({ systemId: sysKey, slug: m.id });
+        if (!dbMod) {
+          dbMod = await ModuleModel.create({
+            systemId: sysKey,
+            moduleNumber: m.moduleNumber,
+            title: m.title,
+            slug: m.id,
+            displayOrder: mIdx,
             isPublished: true,
-            sections: l.id === 'cargo-id-gen' ? MANUAL_CARGO_ID : [],
-            learningObjectives: [
-              'Understand terminal operational workflow',
-              'Perform verification and validation',
-              'Export audit reports',
-            ],
           });
+        }
+
+        for (let lIdx = 0; lIdx < (m.lessons || []).length; lIdx++) {
+          const l = m.lessons[lIdx];
+          const existingLesson = await LessonModel.findOne({ systemId: sysKey, slug: l.id });
+          if (!existingLesson) {
+            await LessonModel.create({
+              systemId: sysKey,
+              moduleId: m.id,
+              title: l.title,
+              slug: l.id,
+              description: l.description,
+              duration: l.duration,
+              order: l.order,
+              displayOrder: lIdx,
+              isPublished: true,
+              sections: l.id === 'cargo-id-gen' ? MANUAL_CARGO_ID : [],
+              learningObjectives: [
+                'Understand terminal operational workflow',
+                'Perform verification and validation',
+                'Export audit reports',
+              ],
+            });
+          }
         }
       }
     }

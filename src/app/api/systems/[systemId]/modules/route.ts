@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { requireAdmin } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { ModuleModel, AuditLogModel } from '@/models';
-import { BTOS_MODULES } from '@/data/portalData';
+import { BTOS_MODULES, ALL_SYSTEM_MODULES } from '@/data/portalData';
+import { LessonModel } from '@/models';
 
 const ModuleSchema = z.object({
   systemId: z.string().min(1, 'System ID is required').trim(),
@@ -18,17 +19,35 @@ const ModuleSchema = z.object({
 // GET /api/systems/[systemId]/modules
 export async function GET(req: NextRequest, { params }: { params: Promise<{ systemId: string }> }) {
   const { systemId } = await params;
+  const sysKey = (systemId || 'btos').toLowerCase();
+  const seedModules = ALL_SYSTEM_MODULES[sysKey] || [];
+
   const conn = await connectDB();
   if (!conn) {
-    if (systemId === 'btos') return NextResponse.json({ modules: BTOS_MODULES });
-    return NextResponse.json({ modules: [] });
+    return NextResponse.json({ modules: seedModules });
   }
 
-  const modules = await ModuleModel.find({ systemId }).sort({ displayOrder: 1 });
-  if (modules.length === 0 && systemId === 'btos') {
-    return NextResponse.json({ modules: BTOS_MODULES });
+  const modules = await ModuleModel.find({ systemId: sysKey }).sort({ displayOrder: 1 }).lean();
+  if (!modules || modules.length === 0) {
+    return NextResponse.json({ modules: seedModules });
   }
-  return NextResponse.json({ modules });
+
+  // Fetch lessons for this system from DB
+  const lessons = await LessonModel.find({ systemId: sysKey }).sort({ order: 1 }).lean();
+  const modulesWithLessons = modules.map((mod: any) => {
+    const modKey = mod.slug || mod.id || mod._id?.toString();
+    const modLessons = lessons.filter(
+      (l: any) => l.moduleId === modKey || l.moduleId === mod.slug || l.moduleId === mod._id?.toString()
+    );
+    const fallbackSeed = seedModules.find((s) => s.id === mod.slug || s.title === mod.title);
+    return {
+      ...mod,
+      id: modKey,
+      lessons: modLessons.length > 0 ? modLessons : fallbackSeed?.lessons || [],
+    };
+  });
+
+  return NextResponse.json({ modules: modulesWithLessons });
 }
 
 // POST /api/systems/[systemId]/modules - Create Module
