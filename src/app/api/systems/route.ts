@@ -11,6 +11,11 @@ const SystemSchema = z.object({
   fullName: z.string().min(1, 'Full name is required').trim(),
   description: z.string().min(1, 'Description is required'),
   iconType: z.string().default('btos'),
+  color: z.string().optional(),
+  topicsCount: z.number().default(0),
+  videosCount: z.number().default(0),
+  manualsCount: z.number().default(1),
+  totalDuration: z.string().default('0 hrs'),
   displayOrder: z.number().default(0),
   isActive: z.boolean().default(true),
 });
@@ -22,9 +27,29 @@ export async function GET() {
     return NextResponse.json({ systems: SYSTEMS_DATA });
   }
 
-  const systems = await SystemModel.find({ isActive: true }).sort({ displayOrder: 1 });
+  let systems = await SystemModel.find({ isActive: true }).sort({ displayOrder: 1 });
   if (systems.length === 0) {
-    return NextResponse.json({ systems: SYSTEMS_DATA });
+    try {
+      await SystemModel.insertMany(
+        SYSTEMS_DATA.map((s, idx) => ({
+          name: s.name,
+          slug: s.id,
+          fullName: s.fullName,
+          description: s.description,
+          iconType: s.iconType,
+          color: s.color,
+          topicsCount: s.topicsCount,
+          videosCount: s.videosCount,
+          manualsCount: s.manualsCount,
+          totalDuration: s.totalDuration,
+          displayOrder: idx + 1,
+          isActive: true,
+        }))
+      );
+      systems = await SystemModel.find({ isActive: true }).sort({ displayOrder: 1 });
+    } catch {
+      return NextResponse.json({ systems: SYSTEMS_DATA });
+    }
   }
   return NextResponse.json({ systems });
 }

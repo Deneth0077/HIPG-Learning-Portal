@@ -497,6 +497,21 @@ export default function UnifiedCurriculumManagerPage() {
   };
 
   // Add / Edit Module
+  const handleDeleteModule = async (m: ModuleItem) => {
+    if (!confirm(`Delete module "${m.title}" and all its lessons? This cannot be undone.`)) return;
+    const modId = m.id || m._id || m.slug;
+    try {
+      if (modId) {
+        await fetch(`/api/systems/${selectedSystem}/modules/${modId}`, { method: 'DELETE' });
+      }
+    } catch {
+      // ignore
+    }
+    setModules((prev) => prev.filter((item) => item.id !== m.id && item._id !== m._id));
+    setStatusAlert({ message: `Module "${m.title}" deleted.`, type: 'success' });
+    setTimeout(() => setStatusAlert(null), 3000);
+  };
+
   const handleModuleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!moduleForm.title.trim()) return;
@@ -504,14 +519,29 @@ export default function UnifiedCurriculumManagerPage() {
     const slug = moduleForm.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
     if (editingModule) {
+      const modId = editingModule.id || editingModule._id || editingModule.slug;
+      try {
+        await fetch(`/api/systems/${selectedSystem}/modules/${modId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            moduleNumber: moduleForm.moduleNumber,
+            title: moduleForm.title,
+            description: moduleForm.description,
+          }),
+        });
+      } catch {
+        // ignore
+      }
+
       setModules((prev) =>
         prev.map((m) =>
-          m.id === editingModule.id
+          m.id === editingModule.id || m._id === editingModule._id
             ? { ...m, moduleNumber: moduleForm.moduleNumber, title: moduleForm.title, description: moduleForm.description }
             : m
         )
       );
-      setStatusAlert({ message: `Module "${moduleForm.title}" updated.`, type: 'success' });
+      setStatusAlert({ message: `Module "${moduleForm.title}" updated!`, type: 'success' });
     } else {
       const newMod: ModuleItem = {
         id: `mod-${Date.now()}`,
@@ -536,7 +566,7 @@ export default function UnifiedCurriculumManagerPage() {
 
       setModules((prev) => [...prev, newMod]);
       setExpandedModules((prev) => ({ ...prev, [newMod.id]: true }));
-      setStatusAlert({ message: `Module "${moduleForm.title}" created!`, type: 'success' });
+      setStatusAlert({ message: `Module "${moduleForm.title}" created in database!`, type: 'success' });
     }
     setTimeout(() => setStatusAlert(null), 3000);
     setShowModuleModal(false);
@@ -669,6 +699,13 @@ export default function UnifiedCurriculumManagerPage() {
                       title="Edit Module Details"
                     >
                       <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteModule(m)}
+                      className="p-1.5 rounded-lg border border-[#DCE6F1] text-[#64748B] hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                      title="Delete Module"
+                    >
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>

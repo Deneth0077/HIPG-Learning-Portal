@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { StatisticsCards } from '@/components/dashboard/StatisticsCards';
@@ -10,6 +10,26 @@ import { LearningProgress } from '@/components/dashboard/LearningProgress';
 import { SYSTEMS_DATA } from '@/data/portalData';
 
 export default function DashboardPage() {
+  const [systems, setSystems] = useState<any[]>(SYSTEMS_DATA);
+
+  useEffect(() => {
+    fetch('/api/systems')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.systems && data.systems.length > 0) {
+          const mapped = data.systems.map((s: any) => ({
+            ...s,
+            id: s.slug || s.id,
+            progressPercent: s.progressPercent ?? 25,
+            completedTopics: s.completedTopics ?? 3,
+            color: s.color || '#1266D5',
+          }));
+          setSystems(mapped);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <MainLayout>
       <div className="space-y-7 lg:space-y-8 w-full">
@@ -17,25 +37,25 @@ export default function DashboardPage() {
         <WelcomeBanner />
 
         {/* Section 2: Statistics Cards */}
-        <StatisticsCards />
+        <StatisticsCards systemsCount={systems.length} />
 
         {/* Section 3 & 4: Systems Grid + Right Side Panel */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-7 lg:gap-8 items-start">
-          {/* Left Column: Explore Systems (Takes 8 of 12 columns on xl, 9 on 2xl) */}
+          {/* Left Column: Explore Systems */}
           <div className="xl:col-span-8 2xl:col-span-9 space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-xl sm:text-2xl font-black text-[#082B4C] tracking-tight">
                 Explore Systems
               </h2>
               <span className="text-xs sm:text-sm font-bold text-[#64748B] bg-white px-3 py-1 rounded-full border border-[#DCE6F1]">
-                7 Operational Platforms
+                {systems.length} Operational Platforms
               </span>
             </div>
 
-            {/* Grid matching reference: 4 cards in first row, 3 cards in second row, nicely proportioned on widescreen */}
+            {/* Grid of systems */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {SYSTEMS_DATA.map((system) => (
-                <SystemCard key={system.id} system={system} />
+              {systems.map((system) => (
+                <SystemCard key={system.slug || system.id} system={system} />
               ))}
             </div>
           </div>

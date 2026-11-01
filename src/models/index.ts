@@ -41,6 +41,7 @@ export interface ISystem extends Document {
   fullName: string;
   description: string;
   iconType: string;
+  color?: string;
   imageUrl?: string;
   displayOrder: number;
   isActive: boolean;
@@ -59,6 +60,7 @@ const SystemSchema = new Schema<ISystem>(
     fullName: { type: String, required: true, trim: true },
     description: { type: String, required: true },
     iconType: { type: String, default: 'btos' },
+    color: { type: String, default: '#1266D5' },
     imageUrl: { type: String },
     displayOrder: { type: Number, default: 0, index: true },
     isActive: { type: Boolean, default: true, index: true },

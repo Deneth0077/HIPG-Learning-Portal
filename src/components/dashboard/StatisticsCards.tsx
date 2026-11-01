@@ -45,10 +45,17 @@ const STATS: StatItem[] = [
   },
 ];
 
-export const StatisticsCards: React.FC = () => {
+export const StatisticsCards: React.FC<{ systemsCount?: number }> = ({ systemsCount }) => {
+  const dynamicStats = STATS.map((s) => {
+    if (s.id === 'systems' && systemsCount) {
+      return { ...s, count: systemsCount.toString() };
+    }
+    return s;
+  });
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-6">
-      {STATS.map((stat) => {
+      {dynamicStats.map((stat) => {
         const IconComponent = stat.icon;
         return (
           <div

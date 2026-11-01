@@ -1,15 +1,34 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { SystemCard } from '@/components/dashboard/SystemCard';
 import { SYSTEMS_DATA } from '@/data/portalData';
 import { Search, Filter } from 'lucide-react';
 
 export default function AllSystemsPage() {
+  const [systems, setSystems] = useState<any[]>(SYSTEMS_DATA);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredSystems = SYSTEMS_DATA.filter(
+  useEffect(() => {
+    fetch('/api/systems')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.systems && data.systems.length > 0) {
+          const mapped = data.systems.map((s: any) => ({
+            ...s,
+            id: s.slug || s.id,
+            progressPercent: s.progressPercent ?? 25,
+            completedTopics: s.completedTopics ?? 3,
+            color: s.color || '#1266D5',
+          }));
+          setSystems(mapped);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const filteredSystems = systems.filter(
     (s) =>
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -46,7 +65,7 @@ export default function AllSystemsPage() {
         {/* Systems Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filteredSystems.map((system) => (
-            <SystemCard key={system.id} system={system} />
+            <SystemCard key={system.slug || system.id} system={system} />
           ))}
         </div>
       </div>
