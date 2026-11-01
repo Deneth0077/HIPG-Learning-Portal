@@ -95,7 +95,10 @@ export default function UnifiedCurriculumManagerPage() {
 
   const [activeEditorTab, setActiveEditorTab] = useState<'info' | 'video' | 'manual'>('video');
   const [uploadingDriveFile, setUploadingDriveFile] = useState(false);
+  const [videoUploadSuccess, setVideoUploadSuccess] = useState(false);
+  const [uploadFileName, setUploadFileName] = useState('');
   const [uploadingStepImageIdx, setUploadingStepImageIdx] = useState<number | null>(null);
+  const [stepUploadSuccessIdx, setStepUploadSuccessIdx] = useState<number | null>(null);
   const [statusAlert, setStatusAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
 
@@ -152,6 +155,10 @@ export default function UnifiedCurriculumManagerPage() {
 
   // Open Unified Editor for a lesson
   const openLessonEditor = (moduleId: string, moduleTitle: string, lesson?: Lesson) => {
+    setVideoUploadSuccess(false);
+    setStepUploadSuccessIdx(null);
+    setUploadFileName('');
+
     if (lesson) {
       // Edit existing lesson
       setActiveEditor({
@@ -365,6 +372,9 @@ export default function UnifiedCurriculumManagerPage() {
     if (!file || !activeEditor) return;
 
     setUploadingDriveFile(true);
+    setVideoUploadSuccess(false);
+    setUploadFileName(file.name);
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('systemName', selectedSystem.toUpperCase());
@@ -382,8 +392,9 @@ export default function UnifiedCurriculumManagerPage() {
           ...prev,
           videoDriveId: data.fileId,
         }));
+        setVideoUploadSuccess(true);
         setStatusAlert({
-          message: `Video uploaded directly to Google Drive Folder: "${selectedSystem.toUpperCase()} / ${activeEditor.moduleTitle}"!`,
+          message: `Video "${file.name}" uploaded successfully to Google Drive folder "${selectedSystem.toUpperCase()} / ${activeEditor.moduleTitle}"!`,
           type: 'success',
         });
         setTimeout(() => setStatusAlert(null), 5000);
@@ -403,6 +414,8 @@ export default function UnifiedCurriculumManagerPage() {
     if (!file || !activeEditor) return;
 
     setUploadingStepImageIdx(idx);
+    setStepUploadSuccessIdx(null);
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('systemName', selectedSystem.toUpperCase());
@@ -426,8 +439,9 @@ export default function UnifiedCurriculumManagerPage() {
           };
           return { ...prev, manualSteps: steps };
         });
+        setStepUploadSuccessIdx(idx);
         setStatusAlert({
-          message: `Screenshot for Step ${idx + 1} saved to Google Drive Module folder!`,
+          message: `Screenshot for Step ${idx + 1} uploaded successfully to Google Drive!`,
           type: 'success',
         });
         setTimeout(() => setStatusAlert(null), 4000);
@@ -924,7 +938,7 @@ export default function UnifiedCurriculumManagerPage() {
                     </div>
 
                     {/* Direct Upload to Google Drive */}
-                    <div className="border-2 border-dashed border-[#CBD5E1] rounded-2xl p-6 text-center space-y-3 bg-[#F8FAFC]">
+                    <div className="border-2 border-dashed border-[#CBD5E1] rounded-2xl p-6 text-center space-y-4 bg-[#F8FAFC]">
                       <Video size={36} className="mx-auto text-[#1266D5]" />
                       <div>
                         <h4 className="font-bold text-[#082B4C] text-sm">Upload Video to this Module</h4>
@@ -933,17 +947,66 @@ export default function UnifiedCurriculumManagerPage() {
                         </p>
                       </div>
 
-                      <label className="cursor-pointer px-5 py-2.5 bg-[#1266D5] hover:bg-[#0D55B8] text-white rounded-xl font-bold text-xs inline-flex items-center gap-2 shadow-sm transition-colors">
-                        {uploadingDriveFile ? <Loader2 size={16} className="animate-spin" /> : <Upload size={14} />}
-                        <span>{uploadingDriveFile ? 'Uploading to Drive Module Folder...' : 'Select MP4 Video File'}</span>
-                        <input
-                          type="file"
-                          accept="video/mp4,video/*"
-                          onChange={handleDirectDriveVideoUpload}
-                          disabled={uploadingDriveFile}
-                          className="hidden"
-                        />
-                      </label>
+                      {/* Loading Progress Effect */}
+                      {uploadingDriveFile && (
+                        <div className="p-4 rounded-2xl bg-blue-50/90 border border-blue-200 text-center space-y-2.5 max-w-md mx-auto animate-pulse">
+                          <div className="flex items-center justify-center gap-2 text-[#1266D5] font-bold text-xs">
+                            <Loader2 size={18} className="animate-spin text-[#1266D5]" />
+                            <span>Uploading video directly into Google Drive...</span>
+                          </div>
+                          <p className="text-[11px] text-[#475569]">
+                            Saving in: <strong className="font-mono text-[#082B4C]">{selectedSystem.toUpperCase()} / {activeEditor.moduleTitle}</strong>
+                          </p>
+                          {uploadFileName && (
+                            <span className="text-[10.5px] font-mono text-[#1E3A8A] bg-blue-100/60 px-3 py-1 rounded-full inline-block truncate max-w-xs">
+                              {uploadFileName}
+                            </span>
+                          )}
+                          <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden">
+                            <div className="h-full bg-[#1266D5] w-3/4 rounded-full animate-pulse"></div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Green Checkmark Success Badge */}
+                      {videoUploadSuccess && (
+                        <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-emerald-900 flex items-center justify-between gap-3 shadow-xs max-w-md mx-auto text-left">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                              <CheckCircle2 size={18} />
+                            </div>
+                            <div>
+                              <span className="font-black text-xs sm:text-sm text-emerald-900 block">
+                                Upload Successfully to Google Drive!
+                              </span>
+                              <span className="text-[11px] text-emerald-700 font-medium block">
+                                Folder: <strong className="font-mono">{selectedSystem.toUpperCase()} / {activeEditor.moduleTitle}</strong>
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-200/80 text-emerald-900 uppercase tracking-wider shrink-0">
+                            Success
+                          </span>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className={`px-5 py-2.5 rounded-xl font-bold text-xs inline-flex items-center gap-2 shadow-sm transition-all ${
+                          uploadingDriveFile
+                            ? 'bg-[#93C5FD] text-white cursor-not-allowed opacity-80'
+                            : 'bg-[#1266D5] hover:bg-[#0D55B8] text-white cursor-pointer active:scale-95'
+                        }`}>
+                          {uploadingDriveFile ? <Loader2 size={16} className="animate-spin" /> : <Upload size={14} />}
+                          <span>{uploadingDriveFile ? 'Uploading to Drive...' : 'Select MP4 Video File'}</span>
+                          <input
+                            type="file"
+                            accept="video/mp4,video/*"
+                            onChange={handleDirectDriveVideoUpload}
+                            disabled={uploadingDriveFile}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
                     </div>
 
                     {/* Or Paste Drive File ID / URL */}
@@ -1075,18 +1138,46 @@ export default function UnifiedCurriculumManagerPage() {
                             </div>
 
                             {/* Step Screenshot / Image upload */}
-                            <div className="pt-2 border-t border-[#E2E8F0] space-y-2">
+                            <div className="pt-2 border-t border-[#E2E8F0] space-y-2.5">
                               <div className="flex items-center justify-between">
                                 <label className="block text-[11px] font-bold text-[#082B4C] flex items-center gap-1.5">
                                   <ImageIcon size={14} className="text-[#1266D5]" />
                                   <span>Step Screenshot / Image (Saved in Google Drive: {activeEditor.moduleTitle})</span>
                                 </label>
                                 {st.imageUrl && (
-                                  <span className="text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                                    Screenshot Attached
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10.5px] font-black text-emerald-800 bg-emerald-50 border border-emerald-300">
+                                    <CheckCircle2 size={12} className="text-emerald-600" /> Upload Successfully
                                   </span>
                                 )}
                               </div>
+
+                              {/* Loading progress effect when this step is uploading */}
+                              {uploadingStepImageIdx === idx && (
+                                <div className="p-4 rounded-xl bg-blue-50/90 border border-blue-200 flex items-center gap-3 animate-pulse">
+                                  <Loader2 size={20} className="animate-spin text-[#1266D5] shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-bold text-xs text-[#082B4C] block">Uploading Screenshot directly to Google Drive...</span>
+                                    <span className="text-[11px] text-[#64748B] block truncate">
+                                      Destination: <strong className="font-mono text-[#1266D5]">{selectedSystem.toUpperCase()} / {activeEditor.moduleTitle}</strong>
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Green checkmark success banner when just uploaded */}
+                              {stepUploadSuccessIdx === idx && (
+                                <div className="p-3 rounded-xl bg-emerald-50 border-2 border-emerald-400 text-emerald-900 flex items-center gap-2.5 shadow-xs">
+                                  <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                                    <CheckCircle2 size={15} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-black text-xs block">Upload Successfully to Google Drive!</span>
+                                    <span className="text-[11px] text-emerald-700 block truncate">
+                                      Screenshot saved to {selectedSystem.toUpperCase()} / {activeEditor.moduleTitle} folder
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
 
                               {st.imageUrl ? (
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white p-3 rounded-xl border border-[#CBD5E1]">
@@ -1098,9 +1189,14 @@ export default function UnifiedCurriculumManagerPage() {
                                     />
                                   </div>
                                   <div className="flex-1 min-w-0 space-y-1">
-                                    <span className="text-xs font-bold text-[#082B4C] block truncate">
-                                      {st.title || `Step ${idx + 1} Screenshot`}
-                                    </span>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-bold text-[#082B4C] block truncate">
+                                        {st.title || `Step ${idx + 1} Screenshot`}
+                                      </span>
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                        <CheckCircle2 size={11} className="text-emerald-600" /> Upload Successfully
+                                      </span>
+                                    </div>
                                     <span className="text-[10.5px] text-[#64748B] font-mono block truncate">
                                       {st.imageDriveId ? `Google Drive ID: ${st.imageDriveId}` : st.imageUrl}
                                     </span>
@@ -1116,45 +1212,39 @@ export default function UnifiedCurriculumManagerPage() {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                  <label className="cursor-pointer px-4 py-2 bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1266D5] rounded-xl font-bold text-xs inline-flex items-center justify-center gap-2 transition-colors shrink-0">
-                                    {uploadingStepImageIdx === idx ? (
-                                      <Loader2 size={14} className="animate-spin" />
-                                    ) : (
+                                uploadingStepImageIdx !== idx && (
+                                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                    <label className="cursor-pointer px-4 py-2 bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1266D5] rounded-xl font-bold text-xs inline-flex items-center justify-center gap-2 transition-colors shrink-0">
                                       <Upload size={14} />
-                                    )}
-                                    <span>
-                                      {uploadingStepImageIdx === idx
-                                        ? 'Uploading to Drive...'
-                                        : '+ Upload Step Screenshot to Drive'}
-                                    </span>
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={(e) => handleStepImageUpload(idx, e)}
-                                      disabled={uploadingStepImageIdx === idx}
-                                      className="hidden"
-                                    />
-                                  </label>
+                                      <span>+ Upload Step Screenshot to Drive</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => handleStepImageUpload(idx, e)}
+                                        disabled={uploadingStepImageIdx === idx}
+                                        className="hidden"
+                                      />
+                                    </label>
 
-                                  <span className="text-[11px] text-[#94A3B8] text-center sm:text-left font-medium">or</span>
+                                    <span className="text-[11px] text-[#94A3B8] text-center sm:text-left font-medium">or</span>
 
-                                  <div className="flex-1 relative">
-                                    <input
-                                      value={st.imageUrl || ''}
-                                      onChange={(e) => {
-                                        const val = e.target.value.trim();
-                                        setLessonFormData((prev) => {
-                                          const steps = [...prev.manualSteps];
-                                          steps[idx] = { ...steps[idx], imageUrl: val };
-                                          return { ...prev, manualSteps: steps };
-                                        });
-                                      }}
-                                      placeholder="Paste Image URL or Drive File ID"
-                                      className="w-full bg-white border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-[#1266D5]"
-                                    />
+                                    <div className="flex-1 relative">
+                                      <input
+                                        value={st.imageUrl || ''}
+                                        onChange={(e) => {
+                                          const val = e.target.value.trim();
+                                          setLessonFormData((prev) => {
+                                            const steps = [...prev.manualSteps];
+                                            steps[idx] = { ...steps[idx], imageUrl: val };
+                                            return { ...prev, manualSteps: steps };
+                                          });
+                                        }}
+                                        placeholder="Paste Image URL or Drive File ID"
+                                        className="w-full bg-white border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-[#1266D5]"
+                                      />
+                                    </div>
                                   </div>
-                                </div>
+                                )
                               )}
                             </div>
                           </div>
