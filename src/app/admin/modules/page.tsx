@@ -1017,13 +1017,9 @@ export default function UnifiedCurriculumManagerPage() {
                             Organized procedure steps with screenshots auto-saved into Google Drive module folder
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleAddManualStep}
-                          className="px-3.5 py-1.5 rounded-xl bg-[#EFF6FF] text-[#1266D5] border border-[#BFDBFE] hover:bg-[#1266D5] hover:text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <Plus size={14} /> Add Step
-                        </button>
+                        <span className="px-2.5 py-1 rounded-full bg-blue-50 text-[#1266D5] border border-blue-200 text-xs font-bold">
+                          {lessonFormData.manualSteps.length} Steps
+                        </span>
                       </div>
 
                       <div className="space-y-4">
@@ -1165,6 +1161,18 @@ export default function UnifiedCurriculumManagerPage() {
                             </div>
                           </div>
                         ))}
+
+                        {/* Add Step Button at Bottom */}
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={handleAddManualStep}
+                            className="w-full py-3.5 rounded-2xl border-2 border-dashed border-[#BFDBFE] bg-[#F0F7FF] hover:bg-[#DBEAFE] hover:border-[#1266D5] text-[#1266D5] text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-[0.99]"
+                          >
+                            <Plus size={16} />
+                            <span>+ Add Step (Step {lessonFormData.manualSteps.length + 1})</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
