@@ -73,6 +73,7 @@ function VideoLessonContent() {
   const [activeTab, setActiveTab] = useState<'overview' | 'manual' | 'step-by-step' | 'screenshots' | 'related'>('overview');
   const [completed, setCompleted] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [playerMode, setPlayerMode] = useState<'stream' | 'drive'>('stream');
 
   // Accordion state
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
@@ -101,14 +102,57 @@ function VideoLessonContent() {
         let foundLesson: Lesson | null = null;
         let foundMod: ModuleItem | null = null;
 
+        const targetSlug = (lessonId || '').toLowerCase();
+        const normTarget = targetSlug.replace(/-installation$/, '-install');
+        const altTarget = targetSlug.replace(/-install$/, '-installation');
+
         for (const m of loadedMods) {
-          const l = (m.lessons || []).find(
-            (item) => item.id === lessonId || item.slug === lessonId || item._id === lessonId
-          );
+          const l = (m.lessons || []).find((item) => {
+            const iId = (item.id || '').toLowerCase();
+            const iSlug = (item.slug || '').toLowerCase();
+            const iTitleSlug = (item.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            return (
+              iId === targetSlug ||
+              iSlug === targetSlug ||
+              iId === normTarget ||
+              iSlug === normTarget ||
+              iId === altTarget ||
+              iSlug === altTarget ||
+              item._id === lessonId ||
+              iTitleSlug === targetSlug ||
+              iTitleSlug === normTarget ||
+              iTitleSlug === altTarget
+            );
+          });
           if (l) {
             foundLesson = l;
             foundMod = m;
             break;
+          }
+        }
+
+        // If lesson has no videoDriveId yet, fetch fresh details from /api/lessons/[id]
+        if (!foundLesson || !foundLesson.videoDriveId) {
+          try {
+            const lesRes = await fetch(`/api/lessons/${lessonId}`);
+            if (lesRes.ok) {
+              const lesData = await lesRes.json();
+              if (lesData.lesson) {
+                if (!foundLesson) {
+                  foundLesson = lesData.lesson;
+                  foundMod = loadedMods.find((m) => m.id === lesData.lesson.moduleId) || loadedMods[0];
+                } else {
+                  foundLesson = {
+                    ...foundLesson,
+                    ...lesData.lesson,
+                    videoDriveId: lesData.lesson.videoDriveId || foundLesson.videoDriveId,
+                    videoUrl: lesData.lesson.videoUrl || foundLesson.videoUrl,
+                  };
+                }
+              }
+            }
+          } catch {
+            // ignore
           }
         }
 
@@ -117,30 +161,12 @@ function VideoLessonContent() {
           setCurrentModule(foundMod);
           setExpandedModules((prev) => ({ ...prev, [foundMod!.id]: true }));
         } else {
-          // Try fetching from /api/lessons/[id]
-          try {
-            const lesRes = await fetch(`/api/lessons/${lessonId}`);
-            const lesData = await lesRes.json();
-            if (lesData.lesson) {
-              setCurrentLesson(lesData.lesson);
-              const mod = loadedMods.find((m) => m.id === lesData.lesson.moduleId) || loadedMods[0];
-              setCurrentModule(mod);
-            } else {
-              // fallback to first lesson of first module
-              const fallbackMod = loadedMods[0];
-              const fallbackLes = fallbackMod?.lessons?.[0];
-              if (fallbackLes) {
-                setCurrentLesson(fallbackLes);
-                setCurrentModule(fallbackMod);
-              }
-            }
-          } catch {
-            const fallbackMod = loadedMods[0];
-            const fallbackLes = fallbackMod?.lessons?.[0];
-            if (fallbackLes) {
-              setCurrentLesson(fallbackLes);
-              setCurrentModule(fallbackMod);
-            }
+          // fallback to first lesson of first module
+          const fallbackMod = loadedMods[0];
+          const fallbackLes = fallbackMod?.lessons?.[0];
+          if (fallbackLes) {
+            setCurrentLesson(fallbackLes);
+            setCurrentModule(fallbackMod);
           }
         }
       } catch {
@@ -272,29 +298,76 @@ function VideoLessonContent() {
 
           {/* Main Content: Video Player, Tabs & Action Controls */}
           <div className="lg:col-span-8 xl:col-span-9 space-y-4">
-            {/* Dynamic Lesson Title */}
+            {/* Dynamic Lesson Title & Player Controls */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h1 className="text-xl sm:text-2xl font-black text-[#082B4C] tracking-tight">
                 {systemMeta.name} – {lessonTitle}
               </h1>
 
-              {currentLesson?.videoDriveId && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200 font-mono self-start sm:self-auto">
-                  <Video size={13} /> Google Drive Stream
-                </span>
-              )}
+              {currentLesson?.videoDriveId ? (
+                <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                  <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl border border-[#DCE6F1] text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setPlayerMode('stream')}
+                      className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        playerMode === 'stream'
+                          ? 'bg-[#1266D5] text-white shadow-xs'
+                          : 'text-[#64748B] hover:text-[#082B4C]'
+                      }`}
+                    >
+                      HIPG Stream
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlayerMode('drive')}
+                      className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        playerMode === 'drive'
+                          ? 'bg-[#1266D5] text-white shadow-xs'
+                          : 'text-[#64748B] hover:text-[#082B4C]'
+                      }`}
+                    >
+                      Drive Preview
+                    </button>
+                  </div>
+                  <a
+                    href={`https://drive.google.com/file/d/${currentLesson.videoDriveId}/view`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg border border-[#DCE6F1] text-[#64748B] hover:text-[#1266D5] hover:bg-white transition-colors"
+                    title="Open directly in Google Drive"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200 font-mono">
+                    <Video size={13} /> Drive Video Ready
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             {/* Video Player Card */}
             <div className="bg-black rounded-2xl overflow-hidden shadow-lg border border-[#DCE6F1] relative group aspect-video max-h-[500px]">
               {currentLesson?.videoDriveId ? (
-                /* Live Google Drive Video Stream Player */
-                <video
-                  key={currentLesson.videoDriveId}
-                  controls
-                  src={`/api/video/stream/${currentLesson.videoDriveId}`}
-                  className="w-full h-full object-contain bg-black"
-                />
+                playerMode === 'stream' ? (
+                  /* Live Google Drive Video Stream Player */
+                  <video
+                    key={currentLesson.videoDriveId}
+                    controls
+                    preload="auto"
+                    src={`/api/video/stream/${currentLesson.videoDriveId}`}
+                    className="w-full h-full object-contain bg-black"
+                  />
+                ) : (
+                  /* Google Drive Preview Iframe */
+                  <iframe
+                    key={`iframe-${currentLesson.videoDriveId}`}
+                    src={`https://drive.google.com/file/d/${currentLesson.videoDriveId}/preview`}
+                    className="w-full h-full border-0 bg-black"
+                    allow="autoplay; fullscreen"
+                    title={currentLesson.title}
+                  />
+                )
               ) : (
                 /* Seaport Backdrop Graphic with info overlay when no video is attached */
                 <div className="absolute inset-0 bg-[#0A192F] overflow-hidden flex items-center justify-center">

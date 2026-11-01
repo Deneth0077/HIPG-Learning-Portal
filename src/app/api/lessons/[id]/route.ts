@@ -30,9 +30,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'DB unavailable' }, { status: 503 });
   }
 
+  const normId = id.replace(/-installation$/, '-install');
+  const altNorm = id.replace(/-install$/, '-installation');
+  const titlePattern = id.replace(/-/g, ' ');
+
   const lesson = await LessonModel.findOne({
-    $or: [{ _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }, { id }, { slug: id }],
-  });
+    $or: [
+      { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+      { id },
+      { slug: id },
+      { slug: normId },
+      { slug: altNorm },
+      { title: { $regex: new RegExp(`^${titlePattern}$`, 'i') } },
+    ],
+  }).sort({ updatedAt: -1 });
 
   if (!lesson) {
     return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
@@ -62,16 +73,32 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: true, lesson: { ...body, id } });
     }
 
+    const normId = id.replace(/-installation$/, '-install');
+    const altNorm = id.replace(/-install$/, '-installation');
+    const targetTitle = (body.title || id.replace(/-/g, ' ')).trim();
+
+    const updateQuery = {
+      $or: [
+        { _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null },
+        { id },
+        { slug: id },
+        { slug: normId },
+        { slug: altNorm },
+        { title: { $regex: new RegExp(`^${targetTitle}$`, 'i') } },
+      ],
+    };
+
     const updated = await LessonModel.findOneAndUpdate(
-      { $or: [{ _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }, { id }, { slug: id }] },
-      { $set: result.data },
-      { new: true }
+      updateQuery,
+      { $set: { ...result.data, id: body.id || id, slug: body.slug || id } },
+      { new: true, sort: { updatedAt: -1 } }
     );
 
     if (!updated) {
-      // If not found by query, attempt creation or update
+      // If not found by query, create
       const created: any = await LessonModel.create({
         ...result.data,
+        id: body.id || id,
         systemId: body.systemId || 'btos',
         moduleId: body.moduleId || 'mod-01',
         title: body.title || 'Lesson',
