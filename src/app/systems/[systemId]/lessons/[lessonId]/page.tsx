@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -18,30 +18,143 @@ import {
   ArrowRight,
   FileText,
   Bookmark,
-  Share2
+  Share2,
+  Video,
+  Image as ImageIcon,
+  ExternalLink,
+  Layers,
+  Sparkles,
+  Info
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { BTOS_MODULES, SYSTEMS_DATA } from '@/data/portalData';
+import { BTOS_MODULES, SYSTEMS_DATA, MANUAL_CARGO_ID } from '@/data/portalData';
+
+interface ManualStep {
+  stepNumber: number;
+  title: string;
+  instruction: string;
+  highlightText?: string;
+  imageUrl?: string;
+  imageDriveId?: string;
+}
+
+interface Lesson {
+  id: string;
+  _id?: string;
+  title: string;
+  slug?: string;
+  duration?: string;
+  order?: string;
+  description?: string;
+  videoDriveId?: string;
+  videoUrl?: string;
+  manualContent?: string;
+  manualSteps?: ManualStep[];
+  isCompleted?: boolean;
+}
+
+interface ModuleItem {
+  id: string;
+  moduleNumber: string;
+  title: string;
+  isCompleted?: boolean;
+  lessons: Lesson[];
+}
 
 function VideoLessonContent() {
   const params = useParams();
   const router = useRouter();
-  const systemId = (params?.systemId as string) || 'btos';
-  const lessonId = (params?.lessonId as string) || 'cargo-id-gen';
+  const systemId = ((params?.systemId as string) || 'btos').toLowerCase();
+  const lessonId = (params?.lessonId as string) || 'btos-uat-install';
 
+  const [modules, setModules] = useState<ModuleItem[]>(BTOS_MODULES as any);
+  const [currentModule, setCurrentModule] = useState<ModuleItem | null>(null);
+  const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'manual' | 'step-by-step' | 'screenshots' | 'related'>('overview');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Accordion state
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({
-    'mod-01': false,
-    'mod-02': false,
-    'mod-03': false,
+    'mod-01': true,
     'mod-04': true,
-    'mod-05': false,
   });
+
+  const systemMeta = SYSTEMS_DATA.find((s) => s.id === systemId) || SYSTEMS_DATA[0];
+
+  // Fetch modules and lesson data
+  useEffect(() => {
+    const loadCurriculum = async () => {
+      try {
+        const res = await fetch(`/api/systems/${systemId}/modules`);
+        const data = await res.json();
+        let loadedMods: ModuleItem[] = [];
+        if (data.modules && data.modules.length > 0) {
+          loadedMods = data.modules;
+          setModules(data.modules);
+        } else {
+          loadedMods = systemId === 'btos' ? (BTOS_MODULES as any) : [];
+          setModules(loadedMods);
+        }
+
+        // Find active lesson across modules
+        let foundLesson: Lesson | null = null;
+        let foundMod: ModuleItem | null = null;
+
+        for (const m of loadedMods) {
+          const l = (m.lessons || []).find(
+            (item) => item.id === lessonId || item.slug === lessonId || item._id === lessonId
+          );
+          if (l) {
+            foundLesson = l;
+            foundMod = m;
+            break;
+          }
+        }
+
+        if (foundLesson && foundMod) {
+          setCurrentLesson(foundLesson);
+          setCurrentModule(foundMod);
+          setExpandedModules((prev) => ({ ...prev, [foundMod!.id]: true }));
+        } else {
+          // Try fetching from /api/lessons/[id]
+          try {
+            const lesRes = await fetch(`/api/lessons/${lessonId}`);
+            const lesData = await lesRes.json();
+            if (lesData.lesson) {
+              setCurrentLesson(lesData.lesson);
+              const mod = loadedMods.find((m) => m.id === lesData.lesson.moduleId) || loadedMods[0];
+              setCurrentModule(mod);
+            } else {
+              // fallback to first lesson of first module
+              const fallbackMod = loadedMods[0];
+              const fallbackLes = fallbackMod?.lessons?.[0];
+              if (fallbackLes) {
+                setCurrentLesson(fallbackLes);
+                setCurrentModule(fallbackMod);
+              }
+            }
+          } catch {
+            const fallbackMod = loadedMods[0];
+            const fallbackLes = fallbackMod?.lessons?.[0];
+            if (fallbackLes) {
+              setCurrentLesson(fallbackLes);
+              setCurrentModule(fallbackMod);
+            }
+          }
+        }
+      } catch {
+        const fallback = systemId === 'btos' ? (BTOS_MODULES as any) : [];
+        setModules(fallback);
+        if (fallback[0]?.lessons?.[0]) {
+          setCurrentModule(fallback[0]);
+          setCurrentLesson(fallback[0].lessons[0]);
+        }
+      }
+    };
+
+    loadCurriculum();
+  }, [systemId, lessonId]);
 
   const toggleModule = (id: string) => {
     setExpandedModules((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -51,48 +164,59 @@ function VideoLessonContent() {
     setCompleted(!completed);
   };
 
+  const lessonTitle = currentLesson?.title || 'Terminal Training Lesson';
+  const moduleTitle = currentModule ? `${currentModule.moduleNumber} – ${currentModule.title}` : 'Training Module';
+  const duration = currentLesson?.duration || '10:00';
+  const steps: ManualStep[] =
+    currentLesson?.manualSteps && currentLesson.manualSteps.length > 0
+      ? currentLesson.manualSteps
+      : (MANUAL_CARGO_ID[4].steps as any);
+
   return (
     <MainLayout>
       <div className="space-y-4">
-        {/* Breadcrumb matching Reference Image 4 */}
-        <div className="flex items-center gap-2 text-xs font-semibold text-[#64748B]">
-          <Link href="/systems/btos" className="text-[#1266D5] hover:underline flex items-center gap-1">
+        {/* Dynamic Breadcrumbs matching path */}
+        <div className="flex items-center gap-2 text-xs font-semibold text-[#64748B] flex-wrap">
+          <Link href={`/systems/${systemId}`} className="text-[#1266D5] hover:underline flex items-center gap-1 font-bold">
             <ChevronLeft size={14} />
-            <span>BTOS</span>
+            <span>{systemMeta.name}</span>
           </Link>
           <span>&gt;</span>
-          <span className="text-[#64748B]">Module 04 - Operational Training</span>
+          <span className="text-[#64748B] font-medium">{moduleTitle}</span>
           <span>&gt;</span>
-          <span className="text-[#082B4C] font-bold">Cargo ID Generation</span>
+          <span className="text-[#082B4C] font-bold">{lessonTitle}</span>
         </div>
 
         {/* 2-Column Lesson Layout: Left Curriculum Sidebar + Main Video Content */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Panel: System Curriculum Sidebar matching Reference Image 4 */}
-          <div className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-[#DCE6F1] shadow-[0_2px_4px_rgba(0,0,0,0.02)] overflow-hidden">
+          {/* Left Panel: System Curriculum Sidebar */}
+          <div className="lg:col-span-4 xl:col-span-3 bg-white rounded-2xl border border-[#DCE6F1] shadow-xs overflow-hidden">
             {/* Dark Navy Header */}
-            <div className="bg-[#082B4C] text-white px-5 py-4">
-              <h3 className="text-sm font-bold tracking-tight">BTOS Curriculum</h3>
+            <div className="bg-[#082B4C] text-white px-5 py-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold tracking-tight">{systemMeta.name} Curriculum</h3>
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-[#1266D5] text-white px-2 py-0.5 rounded">
+                Modules
+              </span>
             </div>
 
             {/* Modules List */}
             <div className="divide-y divide-[#F1F5F9] max-h-[720px] overflow-y-auto">
-              {BTOS_MODULES.map((module) => {
+              {modules.map((module) => {
                 const isExpanded = expandedModules[module.id] ?? false;
-                const isCurrentModule = module.id === 'mod-04';
+                const isCurrentModule = currentModule?.id === module.id;
 
                 return (
                   <div key={module.id} className="text-xs">
                     {/* Module Title Row */}
                     <button
                       onClick={() => toggleModule(module.id)}
-                      className={`w-full px-4 py-3 flex items-center justify-between text-left transition-colors ${
+                      className={`w-full px-4 py-3 flex items-center justify-between text-left transition-colors cursor-pointer ${
                         isCurrentModule ? 'bg-[#F0F7FF] text-[#1266D5] font-bold' : 'hover:bg-[#F8FAFC] text-[#142B45] font-semibold'
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                        <span className="truncate">{module.moduleNumber} - {module.title}</span>
+                        <span className="truncate">{module.moduleNumber} – {module.title}</span>
                       </div>
                       {module.isCompleted && (
                         <CheckCircle2 size={15} className="text-[#16A34A] shrink-0" />
@@ -102,13 +226,17 @@ function VideoLessonContent() {
                     {/* Module Lessons */}
                     {isExpanded && (
                       <div className="bg-[#F8FAFC] py-1 border-t border-[#E2E8F0]">
-                        {module.lessons.map((lesson) => {
-                          const isActive = lesson.id === 'cargo-id-gen';
+                        {(module.lessons || []).map((les) => {
+                          const isActive =
+                            currentLesson &&
+                            (currentLesson.id === les.id ||
+                              currentLesson.slug === les.slug ||
+                              currentLesson.title === les.title);
 
                           return (
                             <Link
-                              key={lesson.id}
-                              href={`/systems/btos/lessons/${lesson.id}`}
+                              key={les.id || les.slug}
+                              href={`/systems/${systemId}/lessons/${les.slug || les.id}`}
                               className={`flex items-center gap-2.5 px-6 py-2.5 text-xs transition-colors ${
                                 isActive
                                   ? 'bg-[#E0F2FE] text-[#0284C7] font-bold border-l-4 border-[#0284C7]'
@@ -117,20 +245,20 @@ function VideoLessonContent() {
                             >
                               <div
                                 className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 text-[10px] ${
-                                  lesson.isCompleted
+                                  les.isCompleted
                                     ? 'bg-green-100 text-[#16A34A]'
                                     : isActive
                                     ? 'bg-[#0284C7] text-white'
                                     : 'bg-gray-200 text-gray-600'
                                 }`}
                               >
-                                {lesson.isCompleted ? (
+                                {les.isCompleted ? (
                                   <CheckCircle2 size={13} />
                                 ) : (
                                   <Play size={8} className="fill-current ml-0.5" />
                                 )}
                               </div>
-                              <span className="truncate">{lesson.title}</span>
+                              <span className="truncate">{les.title}</span>
                             </Link>
                           );
                         })}
@@ -144,122 +272,79 @@ function VideoLessonContent() {
 
           {/* Main Content: Video Player, Tabs & Action Controls */}
           <div className="lg:col-span-8 xl:col-span-9 space-y-4">
-            {/* Lesson Title */}
-            <h1 className="text-xl sm:text-2xl font-black text-[#082B4C] tracking-tight">
-              BTOS - Cargo ID Generation
-            </h1>
+            {/* Dynamic Lesson Title */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h1 className="text-xl sm:text-2xl font-black text-[#082B4C] tracking-tight">
+                {systemMeta.name} – {lessonTitle}
+              </h1>
+
+              {currentLesson?.videoDriveId && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200 font-mono self-start sm:self-auto">
+                  <Video size={13} /> Google Drive Stream
+                </span>
+              )}
+            </div>
 
             {/* Video Player Card */}
             <div className="bg-black rounded-2xl overflow-hidden shadow-lg border border-[#DCE6F1] relative group aspect-video max-h-[500px]">
-              {/* High-quality Seaport Harbor Backdrop Graphic */}
-              <div className="absolute inset-0 bg-[#0A192F] overflow-hidden">
-                <svg
-                  viewBox="0 0 1000 560"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="w-full h-full object-cover"
-                >
-                  <rect width="1000" height="560" fill="url(#videoSeaGrad)" />
-                  {/* Harbor Quay */}
-                  <rect y="380" width="1000" height="180" fill="#1E293B" />
-                  {/* Container Ship at Berth */}
-                  <path d="M400 380 L440 280 L920 280 L980 380 Z" fill="#0F172A" />
-                  {/* Containers on Berth & Ship */}
-                  <g opacity="0.95">
-                    <rect x="470" y="220" width="45" height="60" fill="#EF4444" rx="1" />
-                    <rect x="520" y="200" width="48" height="80" fill="#3B82F6" rx="1" />
-                    <rect x="575" y="210" width="45" height="70" fill="#10B981" rx="1" />
-                    <rect x="625" y="190" width="48" height="90" fill="#F59E0B" rx="1" />
-                    <rect x="680" y="230" width="42" height="50" fill="#6366F1" rx="1" />
-                    <rect x="730" y="210" width="46" height="70" fill="#14B8A6" rx="1" />
-                    <rect x="785" y="240" width="40" height="40" fill="#EC4899" rx="1" />
-                  </g>
-                  {/* Giant Yellow/Orange Container Gantry Crane */}
-                  <g stroke="#F59E0B" strokeWidth="4" fill="none">
-                    <line x1="600" y1="380" x2="630" y2="120" />
-                    <line x1="720" y1="380" x2="680" y2="120" />
-                    <line x1="480" y1="110" x2="880" y2="110" strokeWidth="6" />
-                    <line x1="655" y1="50" x2="480" y2="110" strokeWidth="2.5" />
-                    <line x1="655" y1="50" x2="880" y2="110" strokeWidth="2.5" />
-                    {/* Spreader holding container */}
-                    <rect x="700" y="110" width="28" height="10" fill="#EF4444" stroke="none" />
-                    <line x1="714" y1="120" x2="714" y2="210" stroke="#CBD5E1" strokeWidth="1.5" />
-                    <rect x="698" y="210" width="32" height="16" fill="#10B981" stroke="none" rx="1" />
-                  </g>
-                  <defs>
-                    <linearGradient id="videoSeaGrad" x1="0" y1="0" x2="1000" y2="560" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#38BDF8" />
-                      <stop offset="0.5" stopColor="#0284C7" />
-                      <stop offset="1" stopColor="#082B4C" />
-                    </linearGradient>
-                  </defs>
-                </svg>
-              </div>
+              {currentLesson?.videoDriveId ? (
+                /* Live Google Drive Video Stream Player */
+                <video
+                  key={currentLesson.videoDriveId}
+                  controls
+                  src={`/api/video/stream/${currentLesson.videoDriveId}`}
+                  className="w-full h-full object-contain bg-black"
+                />
+              ) : (
+                /* Seaport Backdrop Graphic with info overlay when no video is attached */
+                <div className="absolute inset-0 bg-[#0A192F] overflow-hidden flex items-center justify-center">
+                  <svg
+                    viewBox="0 0 1000 560"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="w-full h-full object-cover opacity-60"
+                  >
+                    <rect width="1000" height="560" fill="url(#videoSeaGrad)" />
+                    <rect y="380" width="1000" height="180" fill="#1E293B" />
+                    <path d="M400 380 L440 280 L920 280 L980 380 Z" fill="#0F172A" />
+                    <g opacity="0.95">
+                      <rect x="470" y="220" width="45" height="60" fill="#EF4444" rx="1" />
+                      <rect x="520" y="200" width="48" height="80" fill="#3B82F6" rx="1" />
+                      <rect x="575" y="210" width="45" height="70" fill="#10B981" rx="1" />
+                      <rect x="625" y="190" width="48" height="90" fill="#F59E0B" rx="1" />
+                    </g>
+                    <defs>
+                      <linearGradient id="videoSeaGrad" x1="0" y1="0" x2="1000" y2="560" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="#38BDF8" />
+                        <stop offset="0.5" stopColor="#0284C7" />
+                        <stop offset="1" stopColor="#082B4C" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
 
-              {/* Big Center Play Circle matching reference */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <button
-                  onClick={() => setIsPlaying(!isPlaying)}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/60 hover:bg-[#1266D5] text-white flex items-center justify-center transition-all duration-300 transform hover:scale-110 shadow-2xl backdrop-blur-xs"
-                >
-                  {isPlaying ? (
-                    <Pause size={32} className="fill-white" />
-                  ) : (
-                    <Play size={32} className="fill-white ml-1.5" />
-                  )}
-                </button>
-              </div>
-
-              {/* Bottom Video Controls Bar matching reference */}
-              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-4 text-white flex flex-col gap-2">
-                {/* Scrubbing Bar */}
-                <div className="w-full bg-white/30 h-1.5 rounded-full overflow-hidden cursor-pointer relative">
-                  <div className="bg-[#EF4444] h-full w-[45%]" />
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
+                  <div className="absolute z-10 text-center p-6 space-y-3 bg-black/40 backdrop-blur-xs rounded-2xl border border-white/20 max-w-md mx-4">
+                    <Video size={40} className="mx-auto text-[#38BDF8]" />
+                    <h3 className="text-white font-bold text-base sm:text-lg">{lessonTitle}</h3>
+                    <p className="text-white/80 text-xs">
+                      Video file pending upload. Please refer to the step-by-step user manual below for procedure instructions.
+                    </p>
                     <button
-                      onClick={() => setIsPlaying(!isPlaying)}
-                      className="hover:text-[#38BDF8] transition-colors"
+                      onClick={() => setActiveTab('step-by-step')}
+                      className="px-4 py-2 bg-[#1266D5] text-white rounded-xl text-xs font-bold hover:bg-[#0D55B8] transition-colors"
                     >
-                      {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-                    </button>
-                    <button
-                      onClick={() => setIsMuted(!isMuted)}
-                      className="hover:text-[#38BDF8] transition-colors"
-                    >
-                      {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                    </button>
-                    <span className="font-mono text-[11px] text-[#E2E8F0]">
-                      0:00 / 12:36
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => alert('HD 1080p Stream (Google Drive Video Bridge ready)')}
-                      className="hover:text-[#38BDF8] transition-colors"
-                    >
-                      <Settings size={16} />
-                    </button>
-                    <button
-                      onClick={() => alert('Fullscreen activated')}
-                      className="hover:text-[#38BDF8] transition-colors"
-                    >
-                      <Maximize2 size={16} />
+                      View Step-by-Step Instructions
                     </button>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Below Video: Tabs matching reference */}
-            <div className="bg-white rounded-2xl border border-[#DCE6F1] shadow-[0_2px_4px_rgba(0,0,0,0.02)] overflow-hidden">
+            {/* Below Video: Tabs */}
+            <div className="bg-white rounded-2xl border border-[#DCE6F1] shadow-xs overflow-hidden">
               <div className="flex items-center border-b border-[#DCE6F1] px-5 pt-3 gap-6 overflow-x-auto">
                 <button
                   onClick={() => setActiveTab('overview')}
-                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors ${
+                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors cursor-pointer ${
                     activeTab === 'overview'
                       ? 'border-[#1266D5] text-[#1266D5]'
                       : 'border-transparent text-[#64748B] hover:text-[#082B4C]'
@@ -268,167 +353,241 @@ function VideoLessonContent() {
                   Overview
                 </button>
                 <button
-                  onClick={() => setActiveTab('manual')}
-                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors ${
-                    activeTab === 'manual'
-                      ? 'border-[#1266D5] text-[#1266D5]'
-                      : 'border-transparent text-[#64748B] hover:text-[#082B4C]'
-                  }`}
-                >
-                  User Manual
-                </button>
-                <button
                   onClick={() => setActiveTab('step-by-step')}
-                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors ${
+                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
                     activeTab === 'step-by-step'
                       ? 'border-[#1266D5] text-[#1266D5]'
                       : 'border-transparent text-[#64748B] hover:text-[#082B4C]'
                   }`}
                 >
-                  Step by Step
+                  <FileText size={15} />
+                  <span>Step by Step Manual</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-[#1266D5]">
+                    {steps.length}
+                  </span>
                 </button>
                 <button
                   onClick={() => setActiveTab('screenshots')}
-                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors ${
+                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
                     activeTab === 'screenshots'
                       ? 'border-[#1266D5] text-[#1266D5]'
                       : 'border-transparent text-[#64748B] hover:text-[#082B4C]'
                   }`}
                 >
-                  Screenshots
+                  <ImageIcon size={15} />
+                  <span>Screenshots</span>
+                  {steps.filter((s) => s.imageUrl).length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-green-100 text-green-700">
+                      {steps.filter((s) => s.imageUrl).length}
+                    </span>
+                  )}
                 </button>
                 <button
-                  onClick={() => setActiveTab('related')}
-                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors ${
-                    activeTab === 'related'
+                  onClick={() => setActiveTab('manual')}
+                  className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-colors cursor-pointer ${
+                    activeTab === 'manual'
                       ? 'border-[#1266D5] text-[#1266D5]'
                       : 'border-transparent text-[#64748B] hover:text-[#082B4C]'
                   }`}
                 >
-                  Related Lessons
+                  User Manual Document
                 </button>
               </div>
 
-              {/* Tab 1: Overview content matching Reference Image 4 */}
+              {/* Tab 1: Overview content */}
               {activeTab === 'overview' && (
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-                    <div className="md:col-span-8 space-y-2">
+                    <div className="md:col-span-8 space-y-3">
                       <h3 className="text-sm font-bold text-[#082B4C]">About this Lesson</h3>
                       <p className="text-xs text-[#64748B] leading-relaxed">
-                        This video explains how to generate a Cargo ID in BTOS, including required information, step-by-step process and verification.
+                        {currentLesson?.description ||
+                          'Complete step-by-step operating guidelines and interactive instructions for Hambantota International Port Group terminal management operations.'}
                       </p>
+                      {currentLesson?.manualContent && (
+                        <div className="p-3.5 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-[#1E3A8A]">
+                          <strong className="block font-bold mb-1">Operational Scope:</strong>
+                          <p>{currentLesson.manualContent}</p>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="md:col-span-4 bg-[#F8FAFC] border border-[#DCE6F1] rounded-xl p-4 space-y-1.5 text-xs">
+                    <div className="md:col-span-4 bg-[#F8FAFC] border border-[#DCE6F1] rounded-xl p-4 space-y-2 text-xs">
                       <div className="flex justify-between">
                         <span className="text-[#64748B] font-medium">System :</span>
-                        <span className="font-bold text-[#082B4C]">BTOS</span>
+                        <span className="font-bold text-[#082B4C]">{systemMeta.name}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[#64748B] font-medium">Module :</span>
-                        <span className="font-bold text-[#082B4C]">Operational Training</span>
+                        <span className="font-bold text-[#082B4C]">{currentModule?.title || 'Operational'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-[#64748B] font-medium">Duration :</span>
-                        <span className="font-bold text-[#082B4C]">12:36</span>
+                        <span className="font-bold text-[#082B4C] font-mono">{duration}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-[#64748B] font-medium">Manual Steps :</span>
+                        <span className="font-bold text-[#1266D5]">{steps.length} Steps</span>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Tab 2: User Manual snippet */}
-              {activeTab === 'manual' && (
-                <div className="p-6 space-y-3">
-                  <h3 className="text-sm font-bold text-[#082B4C]">Interactive User Guide</h3>
-                  <p className="text-xs text-[#64748B]">Need to view step-by-step interface mockups and instructions?</p>
-                  <Link
-                    href="/systems/btos/manuals/cargo-id"
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#1266D5] text-white text-xs font-bold rounded-lg hover:bg-[#0D55B8]"
-                  >
-                    <FileText size={14} />
-                    <span>Open Full BTOS Manual</span>
-                  </Link>
-                </div>
-              )}
-
-              {/* Tab 3: Step-by-Step */}
+              {/* Tab 2: Step-by-Step Instructions with Screenshots */}
               {activeTab === 'step-by-step' && (
-                <div className="p-6 space-y-3 text-xs">
-                  <div className="flex items-start gap-3">
-                    <span className="w-6 h-6 rounded-full bg-blue-100 text-[#1266D5] font-bold flex items-center justify-center shrink-0">1</span>
-                    <p className="text-[#142B45] font-semibold pt-0.5">Login to BTOS and go to Operation menu.</p>
+                <div className="p-6 space-y-5">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-[#082B4C]">Step-by-Step Procedure Guide</h3>
+                    <p className="text-xs text-[#64748B]">
+                      Follow the sequential instructions and refer to the attached software screenshots.
+                    </p>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <span className="w-6 h-6 rounded-full bg-blue-100 text-[#1266D5] font-bold flex items-center justify-center shrink-0">2</span>
-                    <p className="text-[#142B45] font-semibold pt-0.5">Click on Cargo ID Generation under Operations submenu.</p>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <span className="w-6 h-6 rounded-full bg-blue-100 text-[#1266D5] font-bold flex items-center justify-center shrink-0">3</span>
-                    <p className="text-[#142B45] font-semibold pt-0.5">Fill the required manifest details and click Generate.</p>
+
+                  <div className="space-y-4">
+                    {steps.map((st, sIdx) => (
+                      <div
+                        key={sIdx}
+                        className="p-4 sm:p-5 rounded-2xl border border-[#DCE6F1] bg-[#F8FAFC] space-y-3"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-7 h-7 rounded-lg bg-[#1266D5] text-white font-black text-xs flex items-center justify-center shrink-0">
+                            {st.stepNumber || sIdx + 1}
+                          </span>
+                          <h4 className="font-bold text-sm text-[#082B4C]">
+                            {st.title || `Step ${sIdx + 1}`}
+                          </h4>
+                        </div>
+
+                        <p className="text-xs text-[#334155] leading-relaxed pl-9">
+                          {st.instruction}
+                        </p>
+
+                        {st.highlightText && (
+                          <div className="ml-9 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11.5px] text-amber-900 font-medium">
+                            {st.highlightText}
+                          </div>
+                        )}
+
+                        {/* Step Screenshot */}
+                        {st.imageUrl && (
+                          <div className="ml-9 mt-2">
+                            <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider block mb-1">
+                              Step Screenshot:
+                            </span>
+                            <div className="relative rounded-xl overflow-hidden border border-[#CBD5E1] bg-black/5 max-w-xl group">
+                              <img
+                                src={st.imageUrl}
+                                alt={st.title || `Step ${sIdx + 1}`}
+                                className="w-full h-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                onClick={() => setPreviewImage(st.imageUrl || null)}
+                              />
+                              <button
+                                onClick={() => setPreviewImage(st.imageUrl || null)}
+                                className="absolute bottom-2 right-2 px-2.5 py-1 bg-black/70 hover:bg-black text-white text-[10px] font-bold rounded-lg backdrop-blur-xs flex items-center gap-1"
+                              >
+                                <Maximize2 size={11} /> Click to View Full Size
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Tab 4: Screenshots */}
+              {/* Tab 3: Screenshots Gallery */}
               {activeTab === 'screenshots' && (
-                <div className="p-6">
-                  <p className="text-xs text-[#64748B] mb-3">Interface references captured from production BTOS terminal:</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="border border-[#CBD5E1] rounded-lg p-2 bg-[#F8FAFC] text-center text-xs font-mono text-[#082B4C]">
-                      [BTOS Main Toolbar &gt; Operations Menu]
-                    </div>
-                    <div className="border border-[#CBD5E1] rounded-lg p-2 bg-[#F8FAFC] text-center text-xs font-mono text-[#082B4C]">
-                      [Cargo ID Generation Dialog]
-                    </div>
+                <div className="p-6 space-y-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-[#082B4C]">Lesson Screenshot Gallery</h3>
+                    <p className="text-xs text-[#64748B]">All terminal interface screenshots saved for this lesson.</p>
                   </div>
+
+                  {steps.filter((s) => s.imageUrl).length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {steps
+                        .filter((s) => s.imageUrl)
+                        .map((s, idx) => (
+                          <div
+                            key={idx}
+                            className="border border-[#DCE6F1] rounded-2xl overflow-hidden bg-white shadow-xs group"
+                          >
+                            <div className="relative aspect-video bg-black/5 overflow-hidden">
+                              <img
+                                src={s.imageUrl}
+                                alt={s.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+                                onClick={() => setPreviewImage(s.imageUrl || null)}
+                              />
+                            </div>
+                            <div className="p-3 bg-[#F8FAFC] border-t border-[#E2E8F0] flex items-center justify-between">
+                              <span className="text-xs font-bold text-[#082B4C] truncate">{s.title}</span>
+                              <button
+                                onClick={() => setPreviewImage(s.imageUrl || null)}
+                                className="text-[11px] font-bold text-[#1266D5] hover:underline"
+                              >
+                                View
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-xs text-[#64748B] border border-dashed border-[#CBD5E1] rounded-2xl">
+                      <ImageIcon size={32} className="mx-auto text-gray-400 mb-2" />
+                      <p>No screenshots uploaded for this lesson yet.</p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">
+                        Admins can upload screenshots directly from the Module &amp; Lesson Management panel.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Tab 5: Related Lessons */}
-              {activeTab === 'related' && (
-                <div className="p-6 space-y-2">
-                  <Link href="/systems/btos/lessons/4-3-discharging-cargo-plan" className="block p-3 border border-[#DCE6F1] rounded-lg hover:bg-[#F8FAFC] text-xs">
-                    <span className="font-bold text-[#082B4C]">4.3 Discharging Cargo Plan</span>
-                    <span className="block text-[11px] text-[#64748B]">Next step after generating Cargo ID</span>
+              {/* Tab 4: User Manual */}
+              {activeTab === 'manual' && (
+                <div className="p-6 space-y-4">
+                  <h3 className="text-sm font-bold text-[#082B4C]">Official Operating Document</h3>
+                  <p className="text-xs text-[#64748B] leading-relaxed">
+                    {currentLesson?.manualContent ||
+                      'Standard operating procedure manual for Hambantota International Port Group operations.'}
+                  </p>
+                  <Link
+                    href={`/systems/${systemId}/manuals/${lessonId}`}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#1266D5] text-white text-xs font-bold rounded-xl hover:bg-[#0D55B8] shadow-sm transition-colors"
+                  >
+                    <FileText size={15} />
+                    <span>Open Interactive Documentation Screen</span>
                   </Link>
                 </div>
               )}
-            </div>
-
-            {/* Bottom Lesson Navigation Bar matching Reference Image 4 */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-              <Link
-                href="/systems/btos/lessons/4-1-update-vessel-delay-time"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-[#DCE6F1] bg-white hover:bg-[#F8FAFC] text-xs font-bold text-[#142B45] transition-colors"
-              >
-                <ArrowLeft size={14} />
-                <span>Previous Lesson</span>
-              </Link>
-
-              <button
-                onClick={handleToggleComplete}
-                className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all duration-200 ${
-                  completed
-                    ? 'bg-[#10B981] text-white hover:bg-[#059669]'
-                    : 'bg-[#16A34A] text-white hover:bg-[#15803D]'
-                }`}
-              >
-                <CheckCircle2 size={16} />
-                <span>{completed ? 'Lesson Completed ✓' : 'Mark as Completed'}</span>
-              </button>
-
-              <Link
-                href="/systems/btos/lessons/4-3-discharging-cargo-plan"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-[#DCE6F1] bg-white hover:bg-[#F8FAFC] text-xs font-bold text-[#142B45] transition-colors"
-              >
-                <span>Next Lesson</span>
-                <ArrowRight size={14} />
-              </Link>
             </div>
           </div>
         </div>
+
+        {/* Image Full Size Modal */}
+        {previewImage && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
+            onClick={() => setPreviewImage(null)}
+          >
+            <div className="relative max-w-5xl max-h-[90vh] bg-black rounded-2xl overflow-hidden border border-white/20">
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="absolute top-3 right-3 p-1.5 rounded-full bg-black/60 text-white hover:bg-black"
+              >
+                ✕
+              </button>
+              <img
+                src={previewImage}
+                alt="Enlarged screenshot"
+                className="max-w-full max-h-[85vh] object-contain"
+              />
+            </div>
+          </div>
+        )}
       </div>
     </MainLayout>
   );
@@ -436,7 +595,7 @@ function VideoLessonContent() {
 
 export default function VideoLessonPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs text-[#64748B]">Loading video lesson...</div>}>
+    <Suspense fallback={<div className="p-8 text-center text-xs">Loading lesson...</div>}>
       <VideoLessonContent />
     </Suspense>
   );

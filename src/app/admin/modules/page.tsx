@@ -1044,55 +1044,86 @@ export default function UnifiedCurriculumManagerPage() {
                             </div>
 
                             {/* Step Screenshot / Image upload */}
-                            <div className="pt-1 border-t border-[#E2E8F0]">
-                              <label className="block text-[11px] font-bold text-[#142B45] mb-2 flex items-center gap-1.5">
-                                <ImageIcon size={14} className="text-[#1266D5]" />
-                                <span>Step Screenshot / Image (Saved in Google Drive Module Folder)</span>
-                              </label>
+                            <div className="pt-2 border-t border-[#E2E8F0] space-y-2">
+                              <div className="flex items-center justify-between">
+                                <label className="block text-[11px] font-bold text-[#082B4C] flex items-center gap-1.5">
+                                  <ImageIcon size={14} className="text-[#1266D5]" />
+                                  <span>Step Screenshot / Image (Saved in Google Drive: {activeEditor.moduleTitle})</span>
+                                </label>
+                                {st.imageUrl && (
+                                  <span className="text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                                    Screenshot Attached
+                                  </span>
+                                )}
+                              </div>
 
                               {st.imageUrl ? (
-                                <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-[#DCE6F1]">
-                                  <img
-                                    src={st.imageUrl}
-                                    alt={`Step ${idx + 1}`}
-                                    className="w-20 h-14 object-cover rounded-lg border border-[#CBD5E1]"
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-[11px] font-bold text-[#082B4C] block truncate">
-                                      Screenshot Attached
-                                    </span>
-                                    <span className="text-[10px] text-[#64748B] font-mono block truncate">
-                                      {st.imageDriveId ? `Drive ID: ${st.imageDriveId}` : st.imageUrl}
-                                    </span>
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white p-3 rounded-xl border border-[#CBD5E1]">
+                                  <div className="relative w-full sm:w-40 h-24 bg-black/5 rounded-lg overflow-hidden border border-[#CBD5E1] shrink-0">
+                                    <img
+                                      src={st.imageUrl}
+                                      alt={`Step ${idx + 1}`}
+                                      className="w-full h-full object-cover"
+                                    />
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveStepImage(idx)}
-                                    className="px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 rounded-lg font-bold cursor-pointer"
-                                  >
-                                    Remove
-                                  </button>
+                                  <div className="flex-1 min-w-0 space-y-1">
+                                    <span className="text-xs font-bold text-[#082B4C] block truncate">
+                                      {st.title || `Step ${idx + 1} Screenshot`}
+                                    </span>
+                                    <span className="text-[10.5px] text-[#64748B] font-mono block truncate">
+                                      {st.imageDriveId ? `Google Drive ID: ${st.imageDriveId}` : st.imageUrl}
+                                    </span>
+                                    <div className="flex items-center gap-2 pt-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveStepImage(idx)}
+                                        className="px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 rounded-lg font-bold cursor-pointer transition-colors"
+                                      >
+                                        Remove Screenshot
+                                      </button>
+                                    </div>
+                                  </div>
                                 </div>
                               ) : (
-                                <label className="cursor-pointer px-4 py-2 bg-white hover:bg-blue-50 border border-[#CBD5E1] text-[#1266D5] rounded-xl font-bold text-xs inline-flex items-center gap-2 transition-colors">
-                                  {uploadingStepImageIdx === idx ? (
-                                    <Loader2 size={14} className="animate-spin" />
-                                  ) : (
-                                    <Upload size={14} />
-                                  )}
-                                  <span>
-                                    {uploadingStepImageIdx === idx
-                                      ? 'Uploading Screenshot...'
-                                      : '+ Upload Screenshot for this Step'}
-                                  </span>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleStepImageUpload(idx, e)}
-                                    disabled={uploadingStepImageIdx === idx}
-                                    className="hidden"
-                                  />
-                                </label>
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                  <label className="cursor-pointer px-4 py-2 bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#BFDBFE] text-[#1266D5] rounded-xl font-bold text-xs inline-flex items-center justify-center gap-2 transition-colors shrink-0">
+                                    {uploadingStepImageIdx === idx ? (
+                                      <Loader2 size={14} className="animate-spin" />
+                                    ) : (
+                                      <Upload size={14} />
+                                    )}
+                                    <span>
+                                      {uploadingStepImageIdx === idx
+                                        ? 'Uploading to Drive...'
+                                        : '+ Upload Step Screenshot to Drive'}
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => handleStepImageUpload(idx, e)}
+                                      disabled={uploadingStepImageIdx === idx}
+                                      className="hidden"
+                                    />
+                                  </label>
+
+                                  <span className="text-[11px] text-[#94A3B8] text-center sm:text-left font-medium">or</span>
+
+                                  <div className="flex-1 relative">
+                                    <input
+                                      value={st.imageUrl || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value.trim();
+                                        setLessonFormData((prev) => {
+                                          const steps = [...prev.manualSteps];
+                                          steps[idx] = { ...steps[idx], imageUrl: val };
+                                          return { ...prev, manualSteps: steps };
+                                        });
+                                      }}
+                                      placeholder="Paste Image URL or Drive File ID"
+                                      className="w-full bg-white border border-[#CBD5E1] rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-[#1266D5]"
+                                    />
+                                  </div>
+                                </div>
                               )}
                             </div>
                           </div>
