@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   PlayCircle,
+  Play,
   Video,
   FileText,
   Clock,
@@ -134,6 +135,14 @@ export default function UnifiedCurriculumManagerPage() {
   const [stepMetrics, setStepMetrics] = useState<Record<number, UploadMetrics>>({});
   const [statusAlert, setStatusAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
+  const [watchingVideo, setWatchingVideo] = useState<{
+    title: string;
+    system: string;
+    moduleTitle: string;
+    videoDriveId: string;
+    duration?: string;
+  } | null>(null);
+  const [playerEmbedMode, setPlayerEmbedMode] = useState<'stream' | 'drive'>('stream');
 
   // Form state for current lesson being edited
   const [lessonFormData, setLessonFormData] = useState<{
@@ -891,6 +900,26 @@ export default function UnifiedCurriculumManagerPage() {
 
                           {/* Lesson Action Controls */}
                           <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                            {/* Watch Video Button */}
+                            {les.videoDriveId ? (
+                              <button
+                                onClick={() =>
+                                  setWatchingVideo({
+                                    title: les.title,
+                                    system: selectedSystem.toUpperCase(),
+                                    moduleTitle: m.title,
+                                    videoDriveId: les.videoDriveId!,
+                                    duration: les.duration,
+                                  })
+                                }
+                                className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white border border-emerald-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-95"
+                                title="Watch Lesson Video directly in Player"
+                              >
+                                <Play size={12} className="fill-current" />
+                                <span>Watch Video</span>
+                              </button>
+                            ) : null}
+
                             {/* Complete Edit Button */}
                             <button
                               onClick={() => openLessonEditor(m.id, m.title, les)}
@@ -1172,13 +1201,32 @@ export default function UnifiedCurriculumManagerPage() {
                             <Eye size={14} className="text-[#1266D5]" />
                             <span>In-App Live Video Player Preview</span>
                           </label>
-                          <span className="text-[10.5px] font-mono text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
-                            ID: {lessonFormData.videoDriveId}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setWatchingVideo({
+                                  title: lessonFormData.title || 'Lesson Video Preview',
+                                  system: selectedSystem.toUpperCase(),
+                                  moduleTitle: activeEditor.moduleTitle,
+                                  videoDriveId: lessonFormData.videoDriveId,
+                                  duration: lessonFormData.duration,
+                                })
+                              }
+                              className="px-2.5 py-1 rounded-lg bg-[#1266D5] text-white text-[11px] font-bold hover:bg-[#0D55B8] flex items-center gap-1 cursor-pointer transition-colors shadow-xs active:scale-95"
+                            >
+                              <Play size={11} className="fill-current" />
+                              <span>Open Theater Player</span>
+                            </button>
+                            <span className="text-[10.5px] font-mono text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
+                              ID: {lessonFormData.videoDriveId}
+                            </span>
+                          </div>
                         </div>
-                        <div className="rounded-2xl overflow-hidden bg-black aspect-video max-h-60 border border-[#CBD5E1] flex items-center justify-center">
+                        <div className="rounded-2xl overflow-hidden bg-black aspect-video max-h-72 border-2 border-slate-700 shadow-lg flex items-center justify-center relative group">
                           <video
                             controls
+                            preload="metadata"
                             src={`/api/video/stream/${lessonFormData.videoDriveId}`}
                             className="w-full h-full object-contain"
                           />
@@ -1541,6 +1589,136 @@ export default function UnifiedCurriculumManagerPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* THEATER MODE VIDEO PLAYER MODAL */}
+        {watchingVideo && (
+          <div
+            className="fixed inset-0 z-50 bg-[#041221]/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setWatchingVideo(null);
+            }}
+          >
+            <div className="bg-[#081B30] border border-blue-500/20 rounded-2xl sm:rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col text-white">
+              {/* Modal Header */}
+              <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between gap-3 bg-[#061628]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-blue-600/20 text-[#38BDF8] border border-blue-400/30 flex items-center justify-center shrink-0">
+                    <Play size={16} className="fill-current ml-0.5" />
+                  </div>
+                  <div className="truncate">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-blue-500/20 text-[#38BDF8] border border-blue-400/30">
+                        {watchingVideo.system} &bull; {watchingVideo.moduleTitle}
+                      </span>
+                      {watchingVideo.duration && (
+                        <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                          <Clock size={11} /> {watchingVideo.duration}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-black text-sm sm:text-base text-white truncate mt-0.5">
+                      {watchingVideo.title}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Mode switcher tabs */}
+                  <div className="hidden sm:flex items-center bg-black/40 p-1 rounded-xl border border-white/10 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setPlayerEmbedMode('stream')}
+                      className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        playerEmbedMode === 'stream'
+                          ? 'bg-[#1266D5] text-white shadow-xs'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      HIPG Stream
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlayerEmbedMode('drive')}
+                      className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                        playerEmbedMode === 'drive'
+                          ? 'bg-[#1266D5] text-white shadow-xs'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Drive Preview
+                    </button>
+                  </div>
+
+                  {/* Open in Google Drive */}
+                  <a
+                    href={`https://drive.google.com/file/d/${watchingVideo.videoDriveId}/view`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 transition-colors"
+                    title="Open directly in Google Drive"
+                  >
+                    <ExternalLink size={15} />
+                  </a>
+
+                  {/* Close Modal */}
+                  <button
+                    type="button"
+                    onClick={() => setWatchingVideo(null)}
+                    className="p-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-300 hover:text-red-400 border border-white/10 transition-colors cursor-pointer"
+                    title="Close Video Player"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Video Player Display */}
+              <div className="relative aspect-video w-full bg-black flex items-center justify-center">
+                {playerEmbedMode === 'stream' ? (
+                  <video
+                    key={watchingVideo.videoDriveId}
+                    autoPlay
+                    controls
+                    preload="auto"
+                    src={`/api/video/stream/${watchingVideo.videoDriveId}`}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <iframe
+                    src={`https://drive.google.com/file/d/${watchingVideo.videoDriveId}/preview`}
+                    className="w-full h-full border-0"
+                    allow="autoplay; fullscreen"
+                    title={watchingVideo.title}
+                  />
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-5 py-3.5 bg-[#061628] border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-slate-400 font-mono text-[11px]">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Google Drive File ID:</span>
+                  <span className="text-emerald-400 font-bold select-all bg-black/40 px-2 py-0.5 rounded border border-white/5">
+                    {watchingVideo.videoDriveId}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 justify-end">
+                  <span className="text-[11px] text-slate-400 hidden md:inline">
+                    HIPG Secure Corporate Media Player
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setWatchingVideo(null)}
+                    className="px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold transition-all cursor-pointer"
+                  >
+                    Close Player
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
