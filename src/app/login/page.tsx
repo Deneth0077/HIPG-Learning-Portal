@@ -24,7 +24,7 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: username.trim(), password: password.trim() }),
       });
 
       const data = await res.json();
@@ -99,9 +99,40 @@ export default function LoginPage() {
           <p className="text-base sm:text-lg text-[#CBD5E1] font-normal leading-relaxed">
             System Training &amp; User Manual
           </p>
-          <div className="pt-4 border-t border-white/20 text-xs text-[#E2E8F0] space-y-1">
-            <p><strong>Admin Demo:</strong> admin / HipgAdmin@2026!</p>
-            <p><strong>Employee Demo:</strong> Chathuranga / HipgPort@2026</p>
+          <div className="pt-4 border-t border-white/20 text-xs text-[#E2E8F0] space-y-2">
+            <p className="font-semibold text-white/90">Quick Demo Accounts (Click to Autofill):</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('admin');
+                  setPassword('HipgAdmin@2026!');
+                  setErrorMessage(null);
+                }}
+                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-left transition-all text-xs cursor-pointer group"
+              >
+                <div className="font-bold text-white group-hover:text-[#38BDF8] flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-[#38BDF8]" />
+                  <span>Admin Portal</span>
+                </div>
+                <div className="text-[11px] text-[#CBD5E1] mt-0.5">admin / HipgAdmin@2026!</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('Chathuranga');
+                  setPassword('HipgPort@2026');
+                  setErrorMessage(null);
+                }}
+                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-left transition-all text-xs cursor-pointer group"
+              >
+                <div className="font-bold text-white group-hover:text-[#38BDF8] flex items-center gap-1.5">
+                  <User size={14} className="text-[#38BDF8]" />
+                  <span>Employee Portal</span>
+                </div>
+                <div className="text-[11px] text-[#CBD5E1] mt-0.5">Chathuranga / HipgPort@2026</div>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -111,9 +142,45 @@ export default function LoginPage() {
             <h2 className="text-2xl font-black text-[#082B4C] tracking-tight">
               Sign In
             </h2>
-            <p className="text-xs text-[#64748B] mt-1 mb-5">
+            <p className="text-xs text-[#64748B] mt-1 mb-4">
               Access the HIPG Learning Portal
             </p>
+
+            {/* Quick Role Toggle Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-[#F1F5F9] rounded-xl mb-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('admin');
+                  setPassword('HipgAdmin@2026!');
+                  setErrorMessage(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  username.toLowerCase() === 'admin'
+                    ? 'bg-white text-[#1266D5] shadow-sm'
+                    : 'text-[#64748B] hover:text-[#082B4C]'
+                }`}
+              >
+                <ShieldCheck size={14} />
+                <span>Admin Login</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('Chathuranga');
+                  setPassword('HipgPort@2026');
+                  setErrorMessage(null);
+                }}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  username.toLowerCase() !== 'admin'
+                    ? 'bg-white text-[#1266D5] shadow-sm'
+                    : 'text-[#64748B] hover:text-[#082B4C]'
+                }`}
+              >
+                <User size={14} />
+                <span>Employee Login</span>
+              </button>
+            </div>
 
             {errorMessage && (
               <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-600 font-semibold flex items-center gap-2">
