@@ -22,6 +22,30 @@ export function getDriveClient() {
   return google.drive({ version: 'v3', auth: oauth2Client });
 }
 
+export async function getActiveDriveClient() {
+  if (!CLIENT_ID || !CLIENT_SECRET || CLIENT_ID.includes('mock')) {
+    return null;
+  }
+
+  let activeRefreshToken = REFRESH_TOKEN;
+  try {
+    const conn = await connectDB();
+    if (conn) {
+      const dbToken = await AppSettingModel.findOne({ key: 'GOOGLE_DRIVE_REFRESH_TOKEN' });
+      if (dbToken?.value) activeRefreshToken = dbToken.value;
+    }
+  } catch {}
+
+  if (!activeRefreshToken || activeRefreshToken.includes('mock')) {
+    return null;
+  }
+
+  const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+  oauth2Client.setCredentials({ refresh_token: activeRefreshToken });
+
+  return google.drive({ version: 'v3', auth: oauth2Client });
+}
+
 export interface DriveVideoMeta {
   fileId: string;
   name: string;
@@ -32,7 +56,7 @@ export interface DriveVideoMeta {
 
 // Find or automatically create a subfolder inside Google Drive parent folder
 export async function getOrCreateDriveFolder(folderName: string, parentFolderId: string): Promise<string> {
-  const drive = getDriveClient();
+  const drive = (await getActiveDriveClient()) || getDriveClient();
   if (!drive) return 'mock-folder-' + folderName;
 
   try {
@@ -73,7 +97,7 @@ export async function uploadToModuleDriveFolder(
   systemName: string,
   moduleName: string
 ): Promise<DriveVideoMeta> {
-  const drive = getDriveClient();
+  const drive = (await getActiveDriveClient()) || getDriveClient();
   if (!drive) {
     return {
       fileId: 'mock-file-' + Date.now(),
@@ -83,8 +107,17 @@ export async function uploadToModuleDriveFolder(
     };
   }
 
+  let activeRootFolderId = ROOT_FOLDER_ID;
+  try {
+    const conn = await connectDB();
+    if (conn) {
+      const dbFolder = await AppSettingModel.findOne({ key: 'GOOGLE_DRIVE_FOLDER_ID' });
+      if (dbFolder?.value) activeRootFolderId = dbFolder.value;
+    }
+  } catch {}
+
   // 1. Ensure System Folder exists (e.g. BTOS)
-  const systemFolderId = await getOrCreateDriveFolder(systemName.toUpperCase(), ROOT_FOLDER_ID);
+  const systemFolderId = await getOrCreateDriveFolder(systemName.toUpperCase(), activeRootFolderId);
 
   // 2. Ensure Module Folder exists inside System Folder (e.g. Module 04 - Operational Training)
   const moduleFolderId = await getOrCreateDriveFolder(moduleName, systemFolderId);

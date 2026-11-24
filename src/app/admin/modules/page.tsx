@@ -29,7 +29,8 @@ import {
   Loader2,
   HelpCircle,
   Sparkles,
-  Zap
+  Zap,
+  Shield
 } from 'lucide-react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { SYSTEMS_DATA, BTOS_MODULES, ALL_SYSTEM_MODULES, MANUAL_CARGO_ID } from '@/data/portalData';
@@ -136,6 +137,7 @@ export default function UnifiedCurriculumManagerPage() {
   const [largeVideoNotice, setLargeVideoNotice] = useState<{
     fileName: string;
     fileSizeFormatted: string;
+    reason?: string;
   } | null>(null);
   const [statusAlert, setStatusAlert] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
@@ -465,6 +467,7 @@ export default function UnifiedCurriculumManagerPage() {
         setLargeVideoNotice({
           fileName: file.name,
           fileSizeFormatted: formatBytes(file.size),
+          reason: initData?.error || 'Google Drive Direct Upload requires an active Google Drive authorization.',
         });
         return;
       }
@@ -519,12 +522,14 @@ export default function UnifiedCurriculumManagerPage() {
             setLargeVideoNotice({
               fileName: file.name,
               fileSizeFormatted: formatBytes(file.size),
+              reason: 'Google Drive rejected the stream upload. Please drop the video into the folder directly and paste its link below.',
             });
           }
         } catch {
           setLargeVideoNotice({
             fileName: file.name,
             fileSizeFormatted: formatBytes(file.size),
+            reason: 'Failed to process Google Drive upload response.',
           });
         }
       };
@@ -534,6 +539,7 @@ export default function UnifiedCurriculumManagerPage() {
         setLargeVideoNotice({
           fileName: file.name,
           fileSizeFormatted: formatBytes(file.size),
+          reason: 'Network interrupted during direct Google Drive stream. You can upload directly in Google Drive and paste the link below.',
         });
       };
 
@@ -543,6 +549,7 @@ export default function UnifiedCurriculumManagerPage() {
       setLargeVideoNotice({
         fileName: file.name,
         fileSizeFormatted: formatBytes(file.size),
+        reason: 'Unable to start Google Drive direct upload session. Please paste the Drive link below.',
       });
     }
   };
@@ -1152,23 +1159,23 @@ export default function UnifiedCurriculumManagerPage() {
                       </a>
                     </div>
 
-                    {/* Helpful Guidance Notice for Large Video Files (> 4.5 MB) */}
+                    {/* Helpful Guidance Notice for Video Upload Assistance */}
                     {largeVideoNotice && (
                       <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 text-[#142B45] space-y-3 shadow-sm animate-in fade-in duration-200">
                         <div className="flex items-start gap-3">
                           <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
                           <div>
                             <h4 className="font-bold text-amber-950 text-sm">
-                              Large Video Detected: {largeVideoNotice.fileSizeFormatted} ({largeVideoNotice.fileName})
+                              Video File: {largeVideoNotice.fileName} ({largeVideoNotice.fileSizeFormatted})
                             </h4>
                             <p className="text-xs text-amber-900 mt-1 leading-relaxed">
-                              Because this portal is hosted on Vercel Serverless cloud, direct file uploads are capped at <strong>4.5 MB</strong>. For full-length training videos, please upload directly to Google Drive (which supports files of any size) and link it below.
+                              {largeVideoNotice.reason || 'Google Drive Direct Upload requires an active Google Drive connection.'}
                             </p>
                           </div>
                         </div>
 
                         <div className="bg-white/90 rounded-xl p-3 border border-amber-200 text-xs space-y-2">
-                          <p className="font-bold text-[#082B4C]">Fast 3-Step Procedure:</p>
+                          <p className="font-bold text-[#082B4C]">Recommended 3-Step Procedure:</p>
                           <ol className="list-decimal list-inside space-y-1 text-[#334155] text-[11.5px]">
                             <li>
                               Click{' '}
@@ -1182,7 +1189,7 @@ export default function UnifiedCurriculumManagerPage() {
                               </a>{' '}
                               in a new tab.
                             </li>
-                            <li>Drop <strong>{largeVideoNotice.fileName}</strong> into the module folder.</li>
+                            <li>Drop <strong>{largeVideoNotice.fileName}</strong> into the module folder in Drive.</li>
                             <li>
                               Right-click the video &rarr; <strong>Share &rarr; Copy link</strong> (ensure "Anyone with link can view"), and paste it below!
                             </li>
@@ -1200,6 +1207,15 @@ export default function UnifiedCurriculumManagerPage() {
                             <span>Open HIPG Google Drive Folder</span>
                             <ExternalLink size={12} />
                           </a>
+                          <Link
+                            href="/admin/settings"
+                            target="_blank"
+                            className="px-3.5 py-2 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1.5 transition-colors border border-amber-300"
+                          >
+                            <Shield size={13} />
+                            <span>Renew Drive Token in Settings</span>
+                            <ExternalLink size={11} />
+                          </Link>
                           <button
                             type="button"
                             onClick={() => {
@@ -1209,7 +1225,7 @@ export default function UnifiedCurriculumManagerPage() {
                             }}
                             className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-[#082B4C] font-semibold text-xs transition-all"
                           >
-                            I have the Link / ID
+                            Paste Link Below
                           </button>
                         </div>
                       </div>
@@ -1291,16 +1307,16 @@ export default function UnifiedCurriculumManagerPage() {
                       )}
                     </div>
 
-                    {/* METHOD 2: DIRECT UPLOAD (SMALL CLIPS < 4.5 MB ONLY) */}
-                    <div className="border border-dashed border-[#CBD5E1] rounded-2xl p-5 text-center space-y-3 bg-[#F8FAFC]">
+                    {/* METHOD 2: DIRECT UPLOAD (SUPPORTS ANY FILE SIZE: 50MB, 500MB+) */}
+                    <div className="border-2 border-dashed border-[#CBD5E1] rounded-2xl p-5 text-center space-y-3 bg-[#F8FAFC] hover:border-[#1266D5]/50 transition-colors">
                       <div className="flex items-center justify-center gap-2">
-                        <Video size={20} className="text-[#64748B]" />
+                        <Video size={20} className="text-[#1266D5]" />
                         <h4 className="font-bold text-[#082B4C] text-xs sm:text-sm">
-                          Method 2: Direct Server Upload (Clips &lt; 4.5 MB only)
+                          Method 2: Direct Video Upload to Google Drive (Any File Size: 50MB, 500MB+)
                         </h4>
                       </div>
                       <p className="text-[11px] text-[#64748B] max-w-md mx-auto">
-                        Best for short screen recordings under 4.5 MB. For larger videos, use <strong>Method 1</strong> above.
+                        Streams your video directly from the browser into the module folder in Google Drive.
                       </p>
 
                       {/* Loading Progress & Speed Indicator */}
@@ -1365,13 +1381,13 @@ export default function UnifiedCurriculumManagerPage() {
                       )}
 
                       <div>
-                        <label className={`px-4 py-2 rounded-xl font-bold text-xs inline-flex items-center gap-2 shadow-xs transition-all ${
+                        <label className={`px-5 py-2.5 rounded-xl font-bold text-xs inline-flex items-center gap-2 shadow-sm transition-all ${
                           uploadingDriveFile
                             ? 'bg-[#93C5FD] text-white cursor-not-allowed opacity-80'
-                            : 'bg-white hover:bg-slate-100 text-[#082B4C] border border-slate-300 cursor-pointer active:scale-95'
+                            : 'bg-[#1266D5] hover:bg-[#0D55B8] text-white cursor-pointer active:scale-95'
                         }`}>
                           {uploadingDriveFile ? <Loader2 size={15} className="animate-spin" /> : <Upload size={14} />}
-                          <span>{uploadingDriveFile ? 'Uploading to Drive...' : 'Choose File (< 4.5 MB)'}</span>
+                          <span>{uploadingDriveFile ? 'Uploading to Drive...' : 'Choose Video File (Any Size)'}</span>
                           <input
                             type="file"
                             accept="video/mp4,video/*"

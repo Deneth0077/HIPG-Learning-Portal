@@ -81,6 +81,12 @@ function VideoLessonContent() {
     'mod-04': true,
   });
 
+  const resolveStepImage = (st: ManualStep): string | null => {
+    if (st.imageUrl && st.imageUrl.trim()) return st.imageUrl.trim();
+    if (st.imageDriveId && st.imageDriveId.trim()) return `/api/video/stream/${st.imageDriveId.trim()}`;
+    return null;
+  };
+
   const systemMeta = SYSTEMS_DATA.find((s) => s.id === systemId) || SYSTEMS_DATA[0];
 
   // Fetch modules and lesson data
@@ -547,20 +553,23 @@ function VideoLessonContent() {
                         )}
 
                         {/* Step Screenshot */}
-                        {st.imageUrl && (
+                        {resolveStepImage(st) && (
                           <div className="ml-9 mt-2">
                             <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-wider block mb-1">
                               Step Screenshot:
                             </span>
                             <div className="relative rounded-xl overflow-hidden border border-[#CBD5E1] bg-black/5 max-w-xl group">
                               <img
-                                src={st.imageUrl}
+                                src={resolveStepImage(st)!}
                                 alt={st.title || `Step ${sIdx + 1}`}
                                 className="w-full h-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                                onClick={() => setPreviewImage(st.imageUrl || null)}
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = 'none';
+                                }}
+                                onClick={() => setPreviewImage(resolveStepImage(st))}
                               />
                               <button
-                                onClick={() => setPreviewImage(st.imageUrl || null)}
+                                onClick={() => setPreviewImage(resolveStepImage(st))}
                                 className="absolute bottom-2 right-2 px-2.5 py-1 bg-black/70 hover:bg-black text-white text-[10px] font-bold rounded-lg backdrop-blur-xs flex items-center gap-1"
                               >
                                 <Maximize2 size={11} /> Click to View Full Size
@@ -582,34 +591,40 @@ function VideoLessonContent() {
                     <p className="text-xs text-[#64748B]">All terminal interface screenshots saved for this lesson.</p>
                   </div>
 
-                  {steps.filter((s) => s.imageUrl).length > 0 ? (
+                  {steps.filter((s) => resolveStepImage(s)).length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {steps
-                        .filter((s) => s.imageUrl)
-                        .map((s, idx) => (
-                          <div
-                            key={idx}
-                            className="border border-[#DCE6F1] rounded-2xl overflow-hidden bg-white shadow-xs group"
-                          >
-                            <div className="relative aspect-video bg-black/5 overflow-hidden">
-                              <img
-                                src={s.imageUrl}
-                                alt={s.title}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
-                                onClick={() => setPreviewImage(s.imageUrl || null)}
-                              />
+                        .filter((s) => resolveStepImage(s))
+                        .map((s, idx) => {
+                          const imgSrc = resolveStepImage(s)!;
+                          return (
+                            <div
+                              key={idx}
+                              className="border border-[#DCE6F1] rounded-2xl overflow-hidden bg-white shadow-xs group"
+                            >
+                              <div className="relative aspect-video bg-black/5 overflow-hidden">
+                                <img
+                                  src={imgSrc}
+                                  alt={s.title}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = 'none';
+                                  }}
+                                  onClick={() => setPreviewImage(imgSrc)}
+                                />
+                              </div>
+                              <div className="p-3 bg-[#F8FAFC] border-t border-[#E2E8F0] flex items-center justify-between">
+                                <span className="text-xs font-bold text-[#082B4C] truncate">{s.title}</span>
+                                <button
+                                  onClick={() => setPreviewImage(imgSrc)}
+                                  className="text-[11px] font-bold text-[#1266D5] hover:underline"
+                                >
+                                  View
+                                </button>
+                              </div>
                             </div>
-                            <div className="p-3 bg-[#F8FAFC] border-t border-[#E2E8F0] flex items-center justify-between">
-                              <span className="text-xs font-bold text-[#082B4C] truncate">{s.title}</span>
-                              <button
-                                onClick={() => setPreviewImage(s.imageUrl || null)}
-                                className="text-[11px] font-bold text-[#1266D5] hover:underline"
-                              >
-                                View
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                     </div>
                   ) : (
                     <div className="p-8 text-center text-xs text-[#64748B] border border-dashed border-[#CBD5E1] rounded-2xl">

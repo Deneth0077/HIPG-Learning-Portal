@@ -28,16 +28,18 @@ export async function POST(req: NextRequest) {
       moduleFolderId,
     });
   } catch (err: any) {
-    console.error('Resumable upload session error:', err);
+    console.error('Resumable upload session error:', err?.message);
     const msg = err?.message || 'Failed to create upload session';
+    const isAuthError = msg.includes('invalid_grant') || msg.includes('not configured') || msg.includes('expired');
     return NextResponse.json(
       {
         success: false,
-        error: msg.includes('invalid_grant')
-          ? 'Google Drive API authorization expired (invalid_grant). Please paste the Google Drive share link directly into the lesson editor.'
+        isAuthError,
+        error: isAuthError
+          ? 'Google Drive API authorization expired (invalid_grant). Please renew token in Admin Settings or paste the Google Drive share link directly.'
           : msg,
       },
-      { status: 500 }
+      { status: 200 }
     );
   }
 }

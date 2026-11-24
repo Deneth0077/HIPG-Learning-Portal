@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { getDriveClient } from '@/lib/googleDrive';
+import { getDriveClient, getActiveDriveClient } from '@/lib/googleDrive';
 
 // GET /api/video/stream/[fileId]
 // Authenticated HTTP Range Streaming endpoint with download prevention headers
@@ -15,7 +15,7 @@ export async function GET(
   }
 
   const { fileId } = await params;
-  const drive = getDriveClient();
+  const drive = (await getActiveDriveClient()) || getDriveClient();
 
   if (!drive || fileId.startsWith('mock')) {
     const accept = req.headers.get('accept') || '';
