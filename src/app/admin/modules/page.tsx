@@ -133,7 +133,11 @@ export default function UnifiedCurriculumManagerPage() {
   const [uploadingStepImageIdx, setUploadingStepImageIdx] = useState<number | null>(null);
   const [stepUploadSuccessIdx, setStepUploadSuccessIdx] = useState<number | null>(null);
   const [stepMetrics, setStepMetrics] = useState<Record<number, UploadMetrics>>({});
-  const [statusAlert, setStatusAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [largeVideoNotice, setLargeVideoNotice] = useState<{
+    fileName: string;
+    fileSizeFormatted: string;
+  } | null>(null);
+  const [statusAlert, setStatusAlert] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
   const [watchingVideo, setWatchingVideo] = useState<{
     title: string;
@@ -200,6 +204,7 @@ export default function UnifiedCurriculumManagerPage() {
     setVideoUploadSuccess(false);
     setStepUploadSuccessIdx(null);
     setUploadFileName('');
+    setLargeVideoNotice(null);
 
     if (lesson) {
       // Edit existing lesson
@@ -408,89 +413,178 @@ export default function UnifiedCurriculumManagerPage() {
     setTimeout(() => setStatusAlert(null), 3000);
   };
 
+  // Helper to extract clean Google Drive File ID from any link format
+  const extractGoogleDriveId = (input: string): string => {
+    const val = input.trim();
+    const fileMatch = val.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (fileMatch) return fileMatch[1];
+    const idMatch = val.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idMatch) return idMatch[1];
+    const folderMatch = val.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (folderMatch) return folderMatch[1];
+    return val;
+  };
+
   // Upload video directly into Google Drive System/Module folder with real-time speed tracking
-  const handleDirectDriveVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDirectDriveVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeEditor) return;
 
     setUploadingDriveFile(true);
     setVideoUploadSuccess(false);
     setUploadFileName(file.name);
+    setLargeVideoNotice(null);
     setVideoMetrics({
       percent: 0,
-      speed: 'Calculating...',
+      speed: 'Connecting...',
       uploadedFormatted: '0 MB',
       totalFormatted: formatBytes(file.size),
-      etaFormatted: 'estimating...',
+      etaFormatted: 'Initiating direct Drive session...',
       isFinalizing: false,
     });
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('systemName', selectedSystem.toUpperCase());
-    formData.append('moduleName', activeEditor.moduleTitle);
-    formData.append('title', file.name.replace(/\.[^/.]+$/, ''));
+    try {
+      // Step 1: Request Direct Google Drive Resumable Upload Session (Tiny 1 KB request to server, no Vercel limit!)
+      const initRes = await fetch('/api/admin/drive/resumable-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type || 'video/mp4',
+          systemName: selectedSystem.toUpperCase(),
+          moduleName: activeEditor.moduleTitle,
+        }),
+      });
 
-    const startTime = Date.now();
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/admin/drive/module-upload');
+      const initData = await initRes.json();
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        const now = Date.now();
-        const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
-        const totalElapsed = (now - startTime) / 1000;
-        const currentSpeed = totalElapsed > 0.3 ? event.loaded / totalElapsed : 0;
-        const remainingBytes = event.total - event.loaded;
-        const etaSeconds = currentSpeed > 0 ? Math.round(remainingBytes / currentSpeed) : 0;
-
-        setVideoMetrics({
-          percent,
-          speed: currentSpeed > 0 ? formatSpeed(currentSpeed) : 'Calculating...',
-          uploadedFormatted: formatBytes(event.loaded),
-          totalFormatted: formatBytes(event.total),
-          etaFormatted: etaSeconds > 0 ? `${etaSeconds}s remaining` : 'almost done',
-          isFinalizing: percent >= 98,
+      if (!initRes.ok || !initData.uploadUrl) {
+        // If Google Drive token on server is expired or not configured, show clear guidance
+        setUploadingDriveFile(false);
+        setLargeVideoNotice({
+          fileName: file.name,
+          fileSizeFormatted: formatBytes(file.size),
         });
+        return;
       }
-    };
 
-    xhr.onload = () => {
-      setUploadingDriveFile(false);
-      try {
-        const data = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && data.fileId) {
-          setVideoMetrics((prev) => ({ ...prev, percent: 100, isFinalizing: false }));
-          setLessonFormData((prev) => ({
-            ...prev,
-            videoDriveId: data.fileId,
-          }));
-          setVideoUploadSuccess(true);
-          setStatusAlert({
-            message: `Video "${file.name}" uploaded successfully to Google Drive folder "${selectedSystem.toUpperCase()} / ${activeEditor.moduleTitle}"!`,
-            type: 'success',
+      // Step 2: Stream video bytes DIRECTLY from Browser to Google Drive Resumable URL!
+      // This bypasses Vercel Serverless Function limits completely!
+      const startTime = Date.now();
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', initData.uploadUrl);
+      xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const now = Date.now();
+          const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+          const totalElapsed = (now - startTime) / 1000;
+          const currentSpeed = totalElapsed > 0.3 ? event.loaded / totalElapsed : 0;
+          const remainingBytes = event.total - event.loaded;
+          const etaSeconds = currentSpeed > 0 ? Math.round(remainingBytes / currentSpeed) : 0;
+
+          setVideoMetrics({
+            percent,
+            speed: currentSpeed > 0 ? formatSpeed(currentSpeed) : 'Uploading...',
+            uploadedFormatted: formatBytes(event.loaded),
+            totalFormatted: formatBytes(event.total),
+            etaFormatted: etaSeconds > 0 ? `${etaSeconds}s remaining` : 'almost done',
+            isFinalizing: percent >= 98,
           });
-          setTimeout(() => setStatusAlert(null), 5000);
-        } else {
-          alert(data.error || 'Drive video upload error');
         }
-      } catch {
-        alert('Failed to parse upload response from server');
-      }
-    };
+      };
 
-    xhr.onerror = () => {
+      xhr.onload = () => {
+        setUploadingDriveFile(false);
+        try {
+          if (xhr.status === 200 || xhr.status === 201) {
+            const driveFile = JSON.parse(xhr.responseText);
+            const fileId = driveFile.id;
+            if (fileId) {
+              setVideoMetrics((prev) => ({ ...prev, percent: 100, isFinalizing: false }));
+              setLessonFormData((prev) => ({
+                ...prev,
+                videoDriveId: fileId,
+              }));
+              setVideoUploadSuccess(true);
+              setStatusAlert({
+                message: `Video "${file.name}" uploaded directly to Google Drive folder "${selectedSystem.toUpperCase()} / ${activeEditor.moduleTitle}"!`,
+                type: 'success',
+              });
+              setTimeout(() => setStatusAlert(null), 5000);
+            }
+          } else {
+            setLargeVideoNotice({
+              fileName: file.name,
+              fileSizeFormatted: formatBytes(file.size),
+            });
+          }
+        } catch {
+          setLargeVideoNotice({
+            fileName: file.name,
+            fileSizeFormatted: formatBytes(file.size),
+          });
+        }
+      };
+
+      xhr.onerror = () => {
+        setUploadingDriveFile(false);
+        setLargeVideoNotice({
+          fileName: file.name,
+          fileSizeFormatted: formatBytes(file.size),
+        });
+      };
+
+      xhr.send(file);
+    } catch {
       setUploadingDriveFile(false);
-      alert('Failed to connect to Google Drive API');
-    };
-
-    xhr.send(formData);
+      setLargeVideoNotice({
+        fileName: file.name,
+        fileSizeFormatted: formatBytes(file.size),
+      });
+    }
   };
 
-  // Upload step screenshot directly into Google Drive under module folder with real-time speed tracking
+  // Upload step screenshot directly with instant Base64 preview and background sync
   const handleStepImageUpload = (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeEditor) return;
+
+    // 1. Immediately read file as Base64 Data URL so user sees screenshot instantly without broken icons!
+    const reader = new FileReader();
+    reader.onload = (re) => {
+      const base64Url = re.target?.result as string;
+      if (base64Url) {
+        setLessonFormData((prev) => {
+          const steps = [...prev.manualSteps];
+          steps[idx] = {
+            ...steps[idx],
+            imageUrl: base64Url,
+          };
+          return { ...prev, manualSteps: steps };
+        });
+        setStepMetrics((prev) => ({
+          ...prev,
+          [idx]: {
+            percent: 100,
+            speed: 'Done',
+            uploadedFormatted: formatBytes(file.size),
+            totalFormatted: formatBytes(file.size),
+            etaFormatted: 'attached',
+            isFinalizing: false,
+          },
+        }));
+        setStepUploadSuccessIdx(idx);
+        setStatusAlert({
+          message: `Screenshot for Step ${idx + 1} attached successfully!`,
+          type: 'success',
+        });
+        setTimeout(() => setStatusAlert(null), 4000);
+      }
+    };
+    reader.readAsDataURL(file);
 
     setUploadingStepImageIdx(idx);
     setStepUploadSuccessIdx(null);
@@ -498,83 +592,45 @@ export default function UnifiedCurriculumManagerPage() {
       ...prev,
       [idx]: {
         percent: 0,
-        speed: 'Calculating...',
+        speed: 'Processing...',
         uploadedFormatted: '0 B',
         totalFormatted: formatBytes(file.size),
-        etaFormatted: 'estimating...',
+        etaFormatted: 'attaching image...',
         isFinalizing: false,
       },
     }));
 
+    // 2. Background sync attempt to Google Drive
     const formData = new FormData();
     formData.append('file', file);
     formData.append('systemName', selectedSystem.toUpperCase());
     formData.append('moduleName', activeEditor.moduleTitle);
     formData.append('title', `${lessonFormData.title || 'Step'} - Step ${idx + 1}`);
 
-    const startTime = Date.now();
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/admin/drive/module-upload');
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        const now = Date.now();
-        const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
-        const totalElapsed = (now - startTime) / 1000;
-        const currentSpeed = totalElapsed > 0.2 ? event.loaded / totalElapsed : 0;
-        const remainingBytes = event.total - event.loaded;
-        const etaSeconds = currentSpeed > 0 ? Math.round(remainingBytes / currentSpeed) : 0;
-
-        setStepMetrics((prev) => ({
-          ...prev,
-          [idx]: {
-            percent,
-            speed: currentSpeed > 0 ? formatSpeed(currentSpeed) : 'Calculating...',
-            uploadedFormatted: formatBytes(event.loaded),
-            totalFormatted: formatBytes(event.total),
-            etaFormatted: etaSeconds > 0 ? `${etaSeconds}s remaining` : 'almost done',
-            isFinalizing: percent >= 98,
-          },
-        }));
-      }
-    };
-
     xhr.onload = () => {
       setUploadingStepImageIdx(null);
+      let data: any = null;
       try {
-        const data = JSON.parse(xhr.responseText);
-        if (xhr.status >= 200 && xhr.status < 300 && data.fileId) {
-          const streamUrl = `/api/video/stream/${data.fileId}`;
-          setLessonFormData((prev) => {
-            const steps = [...prev.manualSteps];
-            steps[idx] = {
-              ...steps[idx],
-              imageUrl: streamUrl,
-              imageDriveId: data.fileId,
-            };
-            return { ...prev, manualSteps: steps };
-          });
-          setStepMetrics((prev) => ({
-            ...prev,
-            [idx]: { ...(prev[idx] || {}), percent: 100, isFinalizing: false },
-          }));
-          setStepUploadSuccessIdx(idx);
-          setStatusAlert({
-            message: `Screenshot for Step ${idx + 1} uploaded successfully to Google Drive!`,
-            type: 'success',
-          });
-          setTimeout(() => setStatusAlert(null), 4000);
-        } else {
-          alert(data.error || 'Failed to upload screenshot');
-        }
-      } catch {
-        alert('Failed to parse upload response from server');
+        data = JSON.parse(xhr.responseText);
+      } catch {}
+
+      if (xhr.status >= 200 && xhr.status < 300 && data?.fileId && !data.fileId.startsWith('mock-')) {
+        setLessonFormData((prev) => {
+          const steps = [...prev.manualSteps];
+          steps[idx] = {
+            ...steps[idx],
+            imageDriveId: data.fileId,
+          };
+          return { ...prev, manualSteps: steps };
+        });
       }
     };
 
     xhr.onerror = () => {
       setUploadingStepImageIdx(null);
-      alert('Failed to upload image to Google Drive');
     };
 
     xhr.send(formData);
@@ -1068,29 +1124,184 @@ export default function UnifiedCurriculumManagerPage() {
                 {/* TAB 1: GOOGLE DRIVE VIDEO */}
                 {activeEditorTab === 'video' && (
                   <div className="space-y-5">
-                    {/* Folder Structure Indicator */}
-                    <div className="p-4 bg-[#EFF6FF] border border-[#BFDBFE] rounded-2xl flex items-start gap-3">
-                      <Folder size={20} className="text-[#1266D5] shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-[#082B4C] block font-bold">Google Drive Storage Destination:</strong>
-                        <p className="text-[11.5px] text-[#1E40AF] mt-0.5 font-mono">
-                          📁 HIPG Learning Videos &gt; 📁 {selectedSystem.toUpperCase()} &gt; 📁 {activeEditor.moduleTitle}
-                        </p>
-                        <span className="text-[11px] text-[#64748B] mt-1 block">
-                          Videos uploaded here will automatically create subfolders and stay organized by module.
-                        </span>
+                    {/* Folder Structure Indicator with Direct Google Drive Link */}
+                    <div className="p-4 bg-[#EFF6FF] border border-[#BFDBFE] rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <Folder size={20} className="text-[#1266D5] shrink-0 mt-0.5" />
+                        <div>
+                          <strong className="text-[#082B4C] block font-bold text-xs sm:text-sm">
+                            Google Drive Storage Destination:
+                          </strong>
+                          <p className="text-[11.5px] text-[#1E40AF] mt-0.5 font-mono">
+                            📁 HIPG Learning Videos &gt; 📁 {selectedSystem.toUpperCase()} &gt; 📁 {activeEditor.moduleTitle}
+                          </p>
+                          <span className="text-[11px] text-[#64748B] mt-0.5 block">
+                            Target folder: <strong className="text-[#1266D5]">{activeEditor.moduleTitle}</strong>
+                          </span>
+                        </div>
                       </div>
+                      <a
+                        href="https://drive.google.com/drive/folders/1-0TwN8EfD_5UMGbKhs4G2wnC5qGsiOyw"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-blue-50 border border-[#BFDBFE] text-[#1266D5] text-xs font-bold inline-flex items-center gap-1.5 shrink-0 shadow-xs transition-all hover:scale-[1.02]"
+                      >
+                        <Folder size={14} />
+                        <span>Open Drive Folder</span>
+                        <ExternalLink size={12} />
+                      </a>
                     </div>
 
-                    {/* Direct Upload to Google Drive */}
-                    <div className="border-2 border-dashed border-[#CBD5E1] rounded-2xl p-6 text-center space-y-4 bg-[#F8FAFC]">
-                      <Video size={36} className="mx-auto text-[#1266D5]" />
-                      <div>
-                        <h4 className="font-bold text-[#082B4C] text-sm">Upload Video to this Module</h4>
-                        <p className="text-[11px] text-[#64748B] mt-0.5">
-                          Directly uploads into Google Drive folder: <strong>{activeEditor.moduleTitle}</strong>
-                        </p>
+                    {/* Helpful Guidance Notice for Large Video Files (> 4.5 MB) */}
+                    {largeVideoNotice && (
+                      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 text-[#142B45] space-y-3 shadow-sm animate-in fade-in duration-200">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                          <div>
+                            <h4 className="font-bold text-amber-950 text-sm">
+                              Large Video Detected: {largeVideoNotice.fileSizeFormatted} ({largeVideoNotice.fileName})
+                            </h4>
+                            <p className="text-xs text-amber-900 mt-1 leading-relaxed">
+                              Because this portal is hosted on Vercel Serverless cloud, direct file uploads are capped at <strong>4.5 MB</strong>. For full-length training videos, please upload directly to Google Drive (which supports files of any size) and link it below.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="bg-white/90 rounded-xl p-3 border border-amber-200 text-xs space-y-2">
+                          <p className="font-bold text-[#082B4C]">Fast 3-Step Procedure:</p>
+                          <ol className="list-decimal list-inside space-y-1 text-[#334155] text-[11.5px]">
+                            <li>
+                              Click{' '}
+                              <a
+                                href="https://drive.google.com/drive/folders/1-0TwN8EfD_5UMGbKhs4G2wnC5qGsiOyw"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-bold text-[#1266D5] hover:underline"
+                              >
+                                "Open HIPG Google Drive Folder"
+                              </a>{' '}
+                              in a new tab.
+                            </li>
+                            <li>Drop <strong>{largeVideoNotice.fileName}</strong> into the module folder.</li>
+                            <li>
+                              Right-click the video &rarr; <strong>Share &rarr; Copy link</strong> (ensure "Anyone with link can view"), and paste it below!
+                            </li>
+                          </ol>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <a
+                            href="https://drive.google.com/drive/folders/1-0TwN8EfD_5UMGbKhs4G2wnC5qGsiOyw"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 rounded-xl bg-[#1266D5] hover:bg-[#0D55B8] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+                          >
+                            <Folder size={14} />
+                            <span>Open HIPG Google Drive Folder</span>
+                            <ExternalLink size={12} />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLargeVideoNotice(null);
+                              const linkInput = document.getElementById('drive-link-input');
+                              if (linkInput) linkInput.focus();
+                            }}
+                            className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-[#082B4C] font-semibold text-xs transition-all"
+                          >
+                            I have the Link / ID
+                          </button>
+                        </div>
                       </div>
+                    )}
+
+                    {/* METHOD 1 (PRIMARY & RECOMMENDED): PASTE GOOGLE DRIVE LINK / FILE ID */}
+                    <div className="p-5 rounded-2xl bg-white border-2 border-[#1266D5]/30 space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="drive-link-input" className="font-bold text-[#082B4C] text-xs sm:text-sm flex items-center gap-2">
+                          <Link2 size={16} className="text-[#1266D5]" />
+                          <span>Method 1 (Recommended): Google Drive Video Link or File ID</span>
+                        </label>
+                        <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[#1266D5] border border-blue-200 text-[10.5px] font-bold">
+                          Any File Size Supported
+                        </span>
+                      </div>
+
+                      <p className="text-[11.5px] text-[#64748B] leading-relaxed">
+                        Supports full-length videos of any size (50MB, 500MB, 2GB+). Upload your video to Google Drive, copy its share link or ID, and paste below:
+                      </p>
+
+                      <div className="relative">
+                        <Link2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                        <input
+                          id="drive-link-input"
+                          value={lessonFormData.videoDriveId}
+                          onChange={(e) => {
+                            const val = extractGoogleDriveId(e.target.value);
+                            setLessonFormData({ ...lessonFormData, videoDriveId: val });
+                          }}
+                          placeholder="Paste Google Drive share link (e.g. https://drive.google.com/file/d/1-0TwN8.../view) or File ID"
+                          className="w-full pl-10 pr-24 py-2.5 bg-white border border-[#DCE6F1] rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#1266D5]/30 focus:border-[#1266D5]"
+                        />
+                        {lessonFormData.videoDriveId ? (
+                          <button
+                            type="button"
+                            onClick={() => setLessonFormData({ ...lessonFormData, videoDriveId: '' })}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            Clear
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const text = await navigator.clipboard.readText();
+                                if (text) {
+                                  const val = extractGoogleDriveId(text);
+                                  setLessonFormData({ ...lessonFormData, videoDriveId: val });
+                                }
+                              } catch {
+                                alert('Please paste manually using Ctrl+V');
+                              }
+                            }}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2.5 py-1 text-[11px] font-bold text-[#1266D5] hover:bg-blue-50 rounded-lg transition-colors border border-blue-200"
+                          >
+                            Paste Link
+                          </button>
+                        )}
+                      </div>
+
+                      {lessonFormData.videoDriveId && (
+                        <div className="flex items-center justify-between text-[11px] pt-1">
+                          <span className="text-emerald-700 font-mono flex items-center gap-1 font-semibold">
+                            <CheckCircle2 size={14} className="text-emerald-600" />
+                            Extracted File ID: <strong>{lessonFormData.videoDriveId}</strong>
+                          </span>
+                          <a
+                            href={`https://drive.google.com/file/d/${lessonFormData.videoDriveId}/view`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#1266D5] hover:underline flex items-center gap-1"
+                          >
+                            <span>Open in Drive</span>
+                            <ExternalLink size={11} />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* METHOD 2: DIRECT UPLOAD (SMALL CLIPS < 4.5 MB ONLY) */}
+                    <div className="border border-dashed border-[#CBD5E1] rounded-2xl p-5 text-center space-y-3 bg-[#F8FAFC]">
+                      <div className="flex items-center justify-center gap-2">
+                        <Video size={20} className="text-[#64748B]" />
+                        <h4 className="font-bold text-[#082B4C] text-xs sm:text-sm">
+                          Method 2: Direct Server Upload (Clips &lt; 4.5 MB only)
+                        </h4>
+                      </div>
+                      <p className="text-[11px] text-[#64748B] max-w-md mx-auto">
+                        Best for short screen recordings under 4.5 MB. For larger videos, use <strong>Method 1</strong> above.
+                      </p>
 
                       {/* Loading Progress & Speed Indicator */}
                       {uploadingDriveFile && (
@@ -1140,7 +1351,7 @@ export default function UnifiedCurriculumManagerPage() {
                             </div>
                             <div>
                               <span className="font-black text-xs sm:text-sm text-emerald-900 block">
-                                Upload Successfully to Google Drive!
+                                Uploaded Successfully to Google Drive!
                               </span>
                               <span className="text-[11px] text-emerald-700 font-medium block">
                                 Folder: <strong className="font-mono">{selectedSystem.toUpperCase()} / {activeEditor.moduleTitle}</strong>
@@ -1154,13 +1365,13 @@ export default function UnifiedCurriculumManagerPage() {
                       )}
 
                       <div>
-                        <label className={`px-5 py-2.5 rounded-xl font-bold text-xs inline-flex items-center gap-2 shadow-sm transition-all ${
+                        <label className={`px-4 py-2 rounded-xl font-bold text-xs inline-flex items-center gap-2 shadow-xs transition-all ${
                           uploadingDriveFile
                             ? 'bg-[#93C5FD] text-white cursor-not-allowed opacity-80'
-                            : 'bg-[#1266D5] hover:bg-[#0D55B8] text-white cursor-pointer active:scale-95'
+                            : 'bg-white hover:bg-slate-100 text-[#082B4C] border border-slate-300 cursor-pointer active:scale-95'
                         }`}>
-                          {uploadingDriveFile ? <Loader2 size={16} className="animate-spin" /> : <Upload size={14} />}
-                          <span>{uploadingDriveFile ? 'Uploading to Drive...' : 'Select MP4 Video File'}</span>
+                          {uploadingDriveFile ? <Loader2 size={15} className="animate-spin" /> : <Upload size={14} />}
+                          <span>{uploadingDriveFile ? 'Uploading to Drive...' : 'Choose File (< 4.5 MB)'}</span>
                           <input
                             type="file"
                             accept="video/mp4,video/*"
@@ -1172,30 +1383,9 @@ export default function UnifiedCurriculumManagerPage() {
                       </div>
                     </div>
 
-                    {/* Or Paste Drive File ID / URL */}
-                    <div className="space-y-1.5 pt-2">
-                      <label className="font-bold text-[#142B45] block">
-                        Google Drive File ID or Shareable URL
-                      </label>
-                      <div className="relative">
-                        <Link2 size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
-                        <input
-                          value={lessonFormData.videoDriveId}
-                          onChange={(e) => {
-                            let val = e.target.value.trim();
-                            const match = val.match(/file\/d\/([a-zA-Z0-9_-]+)/) || val.match(/folders\/([a-zA-Z0-9_-]+)/);
-                            if (match) val = match[1];
-                            setLessonFormData({ ...lessonFormData, videoDriveId: val });
-                          }}
-                          placeholder="e.g. 1-0TwN8EfD_5UMGbKhs4G2wnC5qGsiOyw or full Drive Link"
-                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#DCE6F1] rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#1266D5]/30 focus:border-[#1266D5]"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Live In-Modal Video Preview Player */}
+                    {/* LIVE IN-MODAL VIDEO PREVIEW PLAYER */}
                     {lessonFormData.videoDriveId && (
-                      <div className="space-y-2 pt-2">
+                      <div className="space-y-2 pt-2 border-t border-[#E2E8F0]">
                         <div className="flex items-center justify-between">
                           <label className="font-bold text-[#082B4C] flex items-center gap-1.5 text-xs">
                             <Eye size={14} className="text-[#1266D5]" />
@@ -1223,12 +1413,12 @@ export default function UnifiedCurriculumManagerPage() {
                             </span>
                           </div>
                         </div>
-                        <div className="rounded-2xl overflow-hidden bg-black aspect-video max-h-72 border-2 border-slate-700 shadow-lg flex items-center justify-center relative group">
-                          <video
-                            controls
-                            preload="metadata"
-                            src={`/api/video/stream/${lessonFormData.videoDriveId}`}
-                            className="w-full h-full object-contain"
+                        <div className="rounded-2xl overflow-hidden bg-black aspect-video max-h-80 border-2 border-slate-700 shadow-lg flex items-center justify-center relative group">
+                          <iframe
+                            src={`https://drive.google.com/file/d/${lessonFormData.videoDriveId}/preview`}
+                            className="w-full h-full border-0 bg-black"
+                            allow="autoplay; fullscreen"
+                            title="Video Preview"
                           />
                         </div>
                       </div>
@@ -1383,27 +1573,47 @@ export default function UnifiedCurriculumManagerPage() {
                               )}
 
                               {st.imageUrl ? (
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white p-3 rounded-xl border border-[#CBD5E1]">
-                                  <div className="relative w-full sm:w-40 h-24 bg-black/5 rounded-lg overflow-hidden border border-[#CBD5E1] shrink-0">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white p-3.5 rounded-xl border border-[#CBD5E1] shadow-xs">
+                                  <div className="relative w-full sm:w-44 h-28 bg-slate-100 rounded-lg overflow-hidden border border-[#CBD5E1] shrink-0 flex items-center justify-center">
                                     <img
                                       src={st.imageUrl}
                                       alt={`Step ${idx + 1}`}
                                       className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                        const parent = (e.target as HTMLElement).parentElement;
+                                        if (parent && !parent.querySelector('.img-err-fallback')) {
+                                          const d = document.createElement('div');
+                                          d.className = 'img-err-fallback text-center p-2 text-slate-400 text-[10px] font-semibold';
+                                          d.innerHTML = '⚠️ Image preview unavailable<br/><span class="text-[9.5px] text-[#1266D5] font-bold">Use Replace Screenshot below</span>';
+                                          parent.appendChild(d);
+                                        }
+                                      }}
                                     />
                                   </div>
-                                  <div className="flex-1 min-w-0 space-y-1">
+                                  <div className="flex-1 min-w-0 space-y-1.5">
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="text-xs font-bold text-[#082B4C] block truncate">
                                         {st.title || `Step ${idx + 1} Screenshot`}
                                       </span>
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                        <CheckCircle2 size={11} className="text-emerald-600" /> Upload Successfully
+                                        <CheckCircle2 size={11} className="text-emerald-600" /> Screenshot Attached
                                       </span>
                                     </div>
-                                    <span className="text-[10.5px] text-[#64748B] font-mono block truncate">
-                                      {st.imageDriveId ? `Google Drive ID: ${st.imageDriveId}` : st.imageUrl}
+                                    <span className="text-[10px] text-[#64748B] font-mono block truncate">
+                                      {st.imageDriveId ? `Drive ID: ${st.imageDriveId}` : (st.imageUrl.startsWith('data:') ? 'Embedded Screenshot (PNG/JPEG)' : st.imageUrl)}
                                     </span>
-                                    <div className="flex items-center gap-2 pt-1.5">
+                                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                                      <label className="px-2.5 py-1 text-xs text-[#1266D5] hover:bg-blue-50 rounded-lg font-bold cursor-pointer transition-colors border border-blue-200 inline-flex items-center gap-1">
+                                        <Upload size={12} />
+                                        <span>Replace Screenshot</span>
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          onChange={(e) => handleStepImageUpload(idx, e)}
+                                          className="hidden"
+                                        />
+                                      </label>
                                       <button
                                         type="button"
                                         onClick={() => handleRemoveStepImage(idx)}
@@ -1685,6 +1895,10 @@ export default function UnifiedCurriculumManagerPage() {
                     preload="auto"
                     src={`/api/video/stream/${watchingVideo.videoDriveId}`}
                     className="w-full h-full object-contain"
+                    onError={() => {
+                      console.warn('Stream failed or unauthorized, switching to Drive Preview iframe');
+                      setPlayerEmbedMode('drive');
+                    }}
                   />
                 ) : (
                   <iframe

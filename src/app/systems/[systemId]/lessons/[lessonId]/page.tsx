@@ -350,13 +350,17 @@ function VideoLessonContent() {
             <div className="bg-black rounded-2xl overflow-hidden shadow-lg border border-[#DCE6F1] relative group aspect-video max-h-[500px]">
               {currentLesson?.videoDriveId ? (
                 playerMode === 'stream' ? (
-                  /* Live Google Drive Video Stream Player */
+                  /* Live Google Drive Video Stream Player (with automatic fallback to Google Drive preview) */
                   <video
                     key={currentLesson.videoDriveId}
                     controls
                     preload="auto"
                     src={`/api/video/stream/${currentLesson.videoDriveId}`}
                     className="w-full h-full object-contain bg-black"
+                    onError={() => {
+                      console.warn('Stream failed or unauthorized, switching to Drive Preview iframe');
+                      setPlayerMode('drive');
+                    }}
                   />
                 ) : (
                   /* Google Drive Preview Iframe */

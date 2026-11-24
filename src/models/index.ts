@@ -306,6 +306,26 @@ const AuditLogSchema = new Schema<IAuditLog>(
   { timestamps: true }
 );
 
+// ==========================================
+// 10. APP SETTING / CONFIG MODEL
+// ==========================================
+export interface IAppSetting extends Document {
+  key: string;
+  value: string;
+  description?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const AppSettingSchema = new Schema<IAppSetting>(
+  {
+    key: { type: String, required: true, unique: true, index: true },
+    value: { type: String, required: true },
+    description: { type: String },
+  },
+  { timestamps: true }
+);
+
 // Model exports ensuring hot-reload safety in Next.js
 export const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
 export const SystemModel: Model<ISystem> = mongoose.models.System || mongoose.model<ISystem>('System', SystemSchema);
@@ -316,3 +336,4 @@ export const MediaModel: Model<IMedia> = mongoose.models.Media || mongoose.model
 export const LearningProgressModel: Model<ILearningProgress> = mongoose.models.LearningProgress || mongoose.model<ILearningProgress>('LearningProgress', LearningProgressSchema);
 export const BookmarkModel: Model<IBookmark> = mongoose.models.Bookmark || mongoose.model<IBookmark>('Bookmark', BookmarkSchema);
 export const AuditLogModel: Model<IAuditLog> = mongoose.models.AuditLog || mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
+export const AppSettingModel: Model<IAppSetting> = mongoose.models.AppSetting || mongoose.model<IAppSetting>('AppSetting', AppSettingSchema);

@@ -1,5 +1,7 @@
 import { google } from 'googleapis';
 import { Readable } from 'stream';
+import { connectDB } from '@/lib/db';
+import { AppSettingModel } from '@/models';
 
 const CLIENT_ID = process.env.GOOGLE_DRIVE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
@@ -93,22 +95,30 @@ export async function uploadToModuleDriveFolder(
     body: Readable.from(buffer),
   };
 
-  const response = await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: [moduleFolderId],
-    },
-    media,
-    fields: 'id, name, mimeType, size, webViewLink',
-  });
+  try {
+    const response = await drive.files.create({
+      requestBody: {
+        name: fileName,
+        parents: [moduleFolderId],
+      },
+      media,
+      fields: 'id, name, mimeType, size, webViewLink',
+    });
 
-  return {
-    fileId: response.data.id || '',
-    name: response.data.name || fileName,
-    mimeType: response.data.mimeType || mimeType,
-    size: response.data.size || undefined,
-    webViewLink: response.data.webViewLink || undefined,
-  };
+    return {
+      fileId: response.data.id || '',
+      name: response.data.name || fileName,
+      mimeType: response.data.mimeType || mimeType,
+      size: response.data.size || undefined,
+      webViewLink: response.data.webViewLink || undefined,
+    };
+  } catch (err: any) {
+    console.error('Google Drive files.create error:', err?.message);
+    if (err?.message?.includes('invalid_grant') || err?.code === 400) {
+      throw new Error('Google Drive API authorization expired (invalid_grant). Please paste the Google Drive share link directly into the lesson editor.');
+    }
+    throw err;
+  }
 }
 
 export async function uploadVideoToDrive(fileName: string, buffer: Buffer, mimeType: string = 'video/mp4'): Promise<DriveVideoMeta> {
@@ -117,5 +127,86 @@ export async function uploadVideoToDrive(fileName: string, buffer: Buffer, mimeT
 
 export async function ensureDriveFolder(folderName: string, parentFolderId?: string): Promise<string> {
   return getOrCreateDriveFolder(folderName, parentFolderId || ROOT_FOLDER_ID);
+}
+
+// Initiate Resumable Upload Session directly with Google Drive API
+// Returns a Location session URI that the browser can PUT bytes directly into, bypassing Vercel limits!
+export async function initiateResumableDriveUpload(
+  fileName: string,
+  fileSize: number,
+  mimeType: string,
+  systemName: string,
+  moduleName: string
+): Promise<{ uploadUrl: string; moduleFolderId: string }> {
+  if (!CLIENT_ID || !CLIENT_SECRET || CLIENT_ID.includes('mock')) {
+    throw new Error('Google Drive integration is not configured.');
+  }
+
+  let activeRefreshToken = REFRESH_TOKEN;
+  let activeRootFolderId = ROOT_FOLDER_ID;
+
+  try {
+    const conn = await connectDB();
+    if (conn) {
+      const dbToken = await AppSettingModel.findOne({ key: 'GOOGLE_DRIVE_REFRESH_TOKEN' });
+      if (dbToken?.value) activeRefreshToken = dbToken.value;
+      const dbFolder = await AppSettingModel.findOne({ key: 'GOOGLE_DRIVE_FOLDER_ID' });
+      if (dbFolder?.value) activeRootFolderId = dbFolder.value;
+    }
+  } catch {}
+
+  const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
+  if (activeRefreshToken && !activeRefreshToken.includes('mock')) {
+    oauth2Client.setCredentials({ refresh_token: activeRefreshToken });
+  }
+
+  const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+  // 1. Ensure System Folder exists (e.g. BTOS)
+  const systemFolderId = await getOrCreateDriveFolder(systemName.toUpperCase(), activeRootFolderId);
+
+  // 2. Ensure Module Folder exists inside System Folder (e.g. Module 04 - Operational Training)
+  const moduleFolderId = await getOrCreateDriveFolder(moduleName, systemFolderId);
+
+  // 3. Obtain Access Token from OAuth2Client
+  let tokenObj;
+  try {
+    tokenObj = await oauth2Client.getAccessToken();
+  } catch (err: any) {
+    console.error('Failed to get Google Drive access token:', err?.message);
+    throw new Error('Google Drive authorization expired (invalid_grant).');
+  }
+
+  if (!tokenObj || !tokenObj.token) {
+    throw new Error('Google Drive authorization expired (invalid_grant).');
+  }
+
+  // 4. Initiate Resumable Upload with Google Drive API
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${tokenObj.token}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': mimeType || 'video/mp4',
+      ...(fileSize > 0 ? { 'X-Upload-Content-Length': String(fileSize) } : {}),
+    },
+    body: JSON.stringify({
+      name: fileName,
+      parents: [moduleFolderId],
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('Google Drive resumable upload init failed:', res.status, errText);
+    throw new Error(`Google Drive upload initiation failed: ${res.statusText}`);
+  }
+
+  const uploadUrl = res.headers.get('location');
+  if (!uploadUrl) {
+    throw new Error('Google Drive did not return a session upload URL.');
+  }
+
+  return { uploadUrl, moduleFolderId };
 }
 
