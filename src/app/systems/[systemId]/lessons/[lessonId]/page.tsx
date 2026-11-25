@@ -87,7 +87,22 @@ function VideoLessonContent() {
     return null;
   };
 
+  const extractDriveId = (raw?: string | null): string => {
+    if (!raw) return '';
+    const str = raw.trim();
+    const fileMatch = str.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (fileMatch) return fileMatch[1];
+    const idMatch = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (idMatch) return idMatch[1];
+    const folderMatch = str.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (folderMatch) return folderMatch[1];
+    const cleanMatch = str.match(/([a-zA-Z0-9_-]{20,})/);
+    if (cleanMatch) return cleanMatch[1];
+    return str;
+  };
+
   const systemMeta = SYSTEMS_DATA.find((s) => s.id === systemId) || SYSTEMS_DATA[0];
+  const activeVideoId = extractDriveId(currentLesson?.videoDriveId || currentLesson?.videoUrl);
 
   // Fetch modules and lesson data
   useEffect(() => {
@@ -310,7 +325,7 @@ function VideoLessonContent() {
                 {systemMeta.name} – {lessonTitle}
               </h1>
 
-              {currentLesson?.videoDriveId ? (
+              {activeVideoId ? (
                 <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
                   <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl border border-[#DCE6F1] text-xs">
                     <button
@@ -337,7 +352,7 @@ function VideoLessonContent() {
                     </button>
                   </div>
                   <a
-                    href={`https://drive.google.com/file/d/${currentLesson.videoDriveId}/view`}
+                    href={`https://drive.google.com/file/d/${activeVideoId}/view`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg border border-[#DCE6F1] text-[#64748B] hover:text-[#1266D5] hover:bg-white transition-colors"
@@ -354,14 +369,14 @@ function VideoLessonContent() {
 
             {/* Video Player Card */}
             <div className="bg-black rounded-2xl overflow-hidden shadow-lg border border-[#DCE6F1] relative group aspect-video max-h-[500px]">
-              {currentLesson?.videoDriveId ? (
+              {activeVideoId ? (
                 playerMode === 'stream' ? (
                   /* Live Google Drive Video Stream Player (with automatic fallback to Google Drive preview) */
                   <video
-                    key={currentLesson.videoDriveId}
+                    key={activeVideoId}
                     controls
-                    preload="auto"
-                    src={`/api/video/stream/${currentLesson.videoDriveId}`}
+                    preload="metadata"
+                    src={`/api/video/stream/${activeVideoId}`}
                     className="w-full h-full object-contain bg-black"
                     onError={() => {
                       console.warn('Stream failed or unauthorized, switching to Drive Preview iframe');
@@ -371,11 +386,11 @@ function VideoLessonContent() {
                 ) : (
                   /* Google Drive Preview Iframe */
                   <iframe
-                    key={`iframe-${currentLesson.videoDriveId}`}
-                    src={`https://drive.google.com/file/d/${currentLesson.videoDriveId}/preview`}
+                    key={`iframe-${activeVideoId}`}
+                    src={`https://drive.google.com/file/d/${activeVideoId}/preview`}
                     className="w-full h-full border-0 bg-black"
-                    allow="autoplay; fullscreen"
-                    title={currentLesson.title}
+                    allow="autoplay; fullscreen; encrypted-media"
+                    title={currentLesson?.title || 'Lesson Video'}
                   />
                 )
               ) : (

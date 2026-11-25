@@ -138,6 +138,10 @@ export async function uploadToModuleDriveFolder(
       fields: 'id, name, mimeType, size, webViewLink',
     });
 
+    if (response.data.id) {
+      makeDriveFilePublic(response.data.id).catch(() => {});
+    }
+
     return {
       fileId: response.data.id || '',
       name: response.data.name || fileName,
@@ -151,6 +155,25 @@ export async function uploadToModuleDriveFolder(
       throw new Error('Google Drive API authorization expired (invalid_grant). Please paste the Google Drive share link directly into the lesson editor.');
     }
     throw err;
+  }
+}
+
+// Make a Google Drive file publicly viewable so any learner or embedded video player can view it
+export async function makeDriveFilePublic(fileId: string): Promise<boolean> {
+  try {
+    const drive = (await getActiveDriveClient()) || getDriveClient();
+    if (!drive) return false;
+    await drive.permissions.create({
+      fileId,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+    });
+    return true;
+  } catch (err: any) {
+    console.warn('Could not set anyoneWithLink permission on file:', err?.message);
+    return false;
   }
 }
 

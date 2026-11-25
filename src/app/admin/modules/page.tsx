@@ -298,6 +298,7 @@ export default function UnifiedCurriculumManagerPage() {
     setSavingLesson(true);
     const lessonId = activeEditor.lesson.id || activeEditor.lesson._id || `les-${Date.now()}`;
     const slug = lessonFormData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const cleanVideoId = extractGoogleDriveId(lessonFormData.videoDriveId || '');
 
     const lessonPayload = {
       id: lessonId,
@@ -308,7 +309,7 @@ export default function UnifiedCurriculumManagerPage() {
       duration: lessonFormData.duration,
       order: lessonFormData.order,
       description: lessonFormData.description,
-      videoDriveId: lessonFormData.videoDriveId || undefined,
+      videoDriveId: cleanVideoId || undefined,
       manualContent: lessonFormData.manualContent,
       manualSteps: lessonFormData.manualSteps,
       isPublished: true,
@@ -329,6 +330,20 @@ export default function UnifiedCurriculumManagerPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(lessonPayload),
         });
+      }
+
+      if (cleanVideoId) {
+        fetch('/api/admin/drive/permissions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileId: cleanVideoId,
+            lessonId,
+            systemId: selectedSystem,
+            moduleId: activeEditor.moduleId,
+            title: lessonFormData.title,
+          }),
+        }).catch(console.error);
       }
 
       // Update local state immediately
@@ -513,10 +528,31 @@ export default function UnifiedCurriculumManagerPage() {
               }));
               setVideoUploadSuccess(true);
               setStatusAlert({
-                message: `Video "${file.name}" uploaded directly to Google Drive folder "${selectedSystem.toUpperCase()} / ${activeEditor.moduleTitle}"!`,
+                message: `Video uploaded! Setting public permissions and linking to lesson...`,
                 type: 'success',
               });
-              setTimeout(() => setStatusAlert(null), 5000);
+
+              // Automatically set public permissions and persist directly to this lesson in MongoDB!
+              const currentLesId = activeEditor.lesson.id || activeEditor.lesson._id || `les-${Date.now()}`;
+              fetch('/api/admin/drive/permissions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  fileId,
+                  lessonId: currentLesId,
+                  systemId: selectedSystem,
+                  moduleId: activeEditor.moduleId,
+                  title: lessonFormData.title || file.name,
+                }),
+              }).then(async (res) => {
+                if (res.ok) {
+                  setStatusAlert({
+                    message: `Video "${file.name}" uploaded, publicly shared, and linked to lesson!`,
+                    type: 'success',
+                  });
+                  setTimeout(() => setStatusAlert(null), 5000);
+                }
+              }).catch(() => {});
             }
           } else {
             setLargeVideoNotice({
@@ -1431,9 +1467,9 @@ export default function UnifiedCurriculumManagerPage() {
                         </div>
                         <div className="rounded-2xl overflow-hidden bg-black aspect-video max-h-80 border-2 border-slate-700 shadow-lg flex items-center justify-center relative group">
                           <iframe
-                            src={`https://drive.google.com/file/d/${lessonFormData.videoDriveId}/preview`}
+                            src={`https://drive.google.com/file/d/${extractGoogleDriveId(lessonFormData.videoDriveId)}/preview`}
                             className="w-full h-full border-0 bg-black"
-                            allow="autoplay; fullscreen"
+                            allow="autoplay; fullscreen; encrypted-media"
                             title="Video Preview"
                           />
                         </div>
@@ -1905,22 +1941,22 @@ export default function UnifiedCurriculumManagerPage() {
               <div className="relative aspect-video w-full bg-black flex items-center justify-center">
                 {playerEmbedMode === 'stream' ? (
                   <video
-                    key={watchingVideo.videoDriveId}
+                    key={extractGoogleDriveId(watchingVideo.videoDriveId)}
                     autoPlay
                     controls
-                    preload="auto"
-                    src={`/api/video/stream/${watchingVideo.videoDriveId}`}
+                    preload="metadata"
+                    src={`/api/video/stream/${extractGoogleDriveId(watchingVideo.videoDriveId)}`}
                     className="w-full h-full object-contain"
                     onError={() => {
-                      console.warn('Stream failed or unauthorized, switching to Drive Preview iframe');
+                      console.warn('Stream failed or buffering, switching to Drive Preview iframe');
                       setPlayerEmbedMode('drive');
                     }}
                   />
                 ) : (
                   <iframe
-                    src={`https://drive.google.com/file/d/${watchingVideo.videoDriveId}/preview`}
+                    src={`https://drive.google.com/file/d/${extractGoogleDriveId(watchingVideo.videoDriveId)}/preview`}
                     className="w-full h-full border-0"
-                    allow="autoplay; fullscreen"
+                    allow="autoplay; fullscreen; encrypted-media"
                     title={watchingVideo.title}
                   />
                 )}
