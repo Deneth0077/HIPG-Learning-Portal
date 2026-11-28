@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Readable } from 'stream';
 import { getDriveClient, getActiveDriveClient } from '@/lib/googleDrive';
 
 // Extract clean Google Drive File ID if full URL was provided
@@ -78,8 +79,9 @@ export async function GET(
     }
 
     const statusCode = range && driveRes.status === 206 ? 206 : (driveRes.status || 200);
+    const webStream = Readable.toWeb(driveRes.data as Readable) as ReadableStream;
 
-    return new NextResponse(driveRes.data as any, {
+    return new NextResponse(webStream, {
       status: statusCode,
       headers,
     });

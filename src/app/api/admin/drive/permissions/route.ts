@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
-import { makeDriveFilePublic } from '@/lib/googleDrive';
+import { makeDriveFilePublic, findRecentDriveFile } from '@/lib/googleDrive';
 import { connectDB } from '@/lib/db';
 import { LessonModel, VideoModel, AuditLogModel } from '@/models';
 
@@ -10,7 +10,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { fileId, lessonId, systemId, moduleId, title } = body;
+    let { fileId, fileName, moduleFolderId, lessonId, systemId, moduleId, title } = body;
+
+    if (!fileId && fileName) {
+      fileId = await findRecentDriveFile(fileName, moduleFolderId);
+    }
 
     if (!fileId) {
       return NextResponse.json({ error: 'fileId is required' }, { status: 400 });
@@ -37,43 +41,58 @@ export async function POST(req: NextRequest) {
         console.warn('VideoModel upsert warning:', err?.message);
       }
 
-      // 3. If lessonId is provided, link to lesson immediately in MongoDB!
+      // 3. If lessonId is provided, link to lesson immediately in MongoDB
       if (lessonId) {
         const normId = lessonId.replace(/-installation$/, '-install');
         const altNorm = lessonId.replace(/-install$/, '-installation');
-        const targetTitle = (title || lessonId.replace(/-/g, ' ')).trim();
+        const safeTitle = (title || lessonId.replace(/-/g, ' ')).trim() || 'Lesson Video';
+        const escapedTitle = safeTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const generatedSlug =
+          safeTitle
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '') || lessonId;
 
-        await LessonModel.findOneAndUpdate(
-          {
-            $or: [
-              { id: lessonId },
-              { slug: lessonId },
-              { slug: normId },
-              { slug: altNorm },
-              { _id: lessonId.match(/^[0-9a-fA-F]{24}$/) ? lessonId : null },
-              { title: { $regex: new RegExp(`^${targetTitle}$`, 'i') } },
-            ],
-          },
-          {
-            $set: {
-              videoDriveId: fileId,
-              isPublished: true,
-              ...(systemId ? { systemId: systemId.toLowerCase() } : {}),
-              ...(moduleId ? { moduleId } : {}),
-              ...(title ? { title } : {}),
-            },
-          },
-          { upsert: true, new: true }
-        );
+        const orConditions: Record<string, unknown>[] = [
+          { slug: lessonId },
+          { slug: normId },
+          { slug: altNorm },
+          { slug: generatedSlug },
+          { title: { $regex: new RegExp(`^${escapedTitle}$`, 'i') } },
+        ];
 
-        await AuditLogModel.create({
-          adminId: adminCheck.userId,
-          adminUsername: adminCheck.username,
-          action: 'DRIVE_VIDEO_LINKED_TO_LESSON',
-          resourceType: 'Lesson',
-          resourceId: lessonId,
-          details: { fileId, systemId, moduleId, title },
-        });
+        if (/^[0-9a-fA-F]{24}$/.test(lessonId)) {
+          orConditions.unshift({ _id: lessonId });
+        }
+
+        const existing = await LessonModel.findOne({ $or: orConditions }).sort({ updatedAt: -1 });
+        if (existing) {
+          existing.videoDriveId = fileId;
+          existing.isPublished = true;
+          await existing.save();
+        } else {
+          await LessonModel.create({
+            systemId: (systemId || 'btos').toLowerCase(),
+            moduleId: moduleId || 'mod-01',
+            title: safeTitle,
+            slug: lessonId || generatedSlug,
+            videoDriveId: fileId,
+            isPublished: true,
+          });
+        }
+
+        try {
+          await AuditLogModel.create({
+            adminId: adminCheck.userId,
+            adminUsername: adminCheck.username,
+            action: 'DRIVE_VIDEO_LINKED_TO_LESSON',
+            resourceType: 'Lesson',
+            resourceId: lessonId,
+            details: { fileId, systemId, moduleId, title },
+          });
+        } catch (auditErr: any) {
+          console.warn('AuditLog warning:', auditErr?.message);
+        }
       }
     }
 
@@ -83,4 +102,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err?.message || 'Failed to update permissions' }, { status: 500 });
   }
 }
-

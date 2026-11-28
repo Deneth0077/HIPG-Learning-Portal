@@ -141,6 +141,7 @@ export default function UnifiedCurriculumManagerPage() {
   } | null>(null);
   const [statusAlert, setStatusAlert] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [savingLesson, setSavingLesson] = useState(false);
+  const [deletingDriveVideo, setDeletingDriveVideo] = useState(false);
   const [watchingVideo, setWatchingVideo] = useState<{
     title: string;
     system: string;
@@ -570,7 +571,44 @@ export default function UnifiedCurriculumManagerPage() {
         }
       };
 
-      xhr.onerror = () => {
+      xhr.onerror = async () => {
+        // Fallback: if Google saved the file (200 OK) but browser CORS blocked reading response, recover fileId from Drive!
+        try {
+          const currentLesId = activeEditor.lesson.id || activeEditor.lesson._id || `les-${Date.now()}`;
+          const recRes = await fetch('/api/admin/drive/permissions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileName: file.name,
+              moduleFolderId: initData.moduleFolderId,
+              lessonId: currentLesId,
+              systemId: selectedSystem,
+              moduleId: activeEditor.moduleId,
+              title: lessonFormData.title || file.name,
+            }),
+          });
+          if (recRes.ok) {
+            const recData = await recRes.json();
+            if (recData.fileId) {
+              setUploadingDriveFile(false);
+              setVideoMetrics((prev) => ({ ...prev, percent: 100, isFinalizing: false }));
+              setLessonFormData((prev) => ({
+                ...prev,
+                videoDriveId: recData.fileId,
+              }));
+              setVideoUploadSuccess(true);
+              setStatusAlert({
+                message: `Video "${file.name}" uploaded, publicly shared, and linked to lesson!`,
+                type: 'success',
+              });
+              setTimeout(() => setStatusAlert(null), 5000);
+              return;
+            }
+          }
+        } catch {
+          // ignore and fall through to notice
+        }
+
         setUploadingDriveFile(false);
         setLargeVideoNotice({
           fileName: file.name,
@@ -587,6 +625,71 @@ export default function UnifiedCurriculumManagerPage() {
         fileSizeFormatted: formatBytes(file.size),
         reason: 'Unable to start Google Drive direct upload session. Please paste the Drive link below.',
       });
+    }
+  };
+
+  // Delete uploaded video from both lesson and Google Drive
+  const handleDeleteDriveVideo = async () => {
+    const cleanId = extractGoogleDriveId(lessonFormData.videoDriveId || '');
+    if (!cleanId || !activeEditor) return;
+
+    if (
+      !confirm(
+        'Are you sure you want to delete this video? This will remove it from this lesson AND permanently delete the video file from Google Drive.'
+      )
+    ) {
+      return;
+    }
+
+    setDeletingDriveVideo(true);
+    try {
+      const lessonId = activeEditor.lesson.id || activeEditor.lesson._id;
+      const res = await fetch('/api/admin/drive/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileId: cleanId,
+          lessonId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete video');
+      }
+
+      setLessonFormData((prev) => ({ ...prev, videoDriveId: '' }));
+      setVideoUploadSuccess(false);
+      setUploadFileName('');
+      if (lessonId) {
+        setModules((prev) =>
+          prev.map((m) =>
+            m.id !== activeEditor.moduleId
+              ? m
+              : {
+                  ...m,
+                  lessons: (m.lessons || []).map((l) =>
+                    l.id === lessonId || l._id === lessonId ? { ...l, videoDriveId: undefined } : l
+                  ),
+                }
+          )
+        );
+      }
+
+      setStatusAlert({
+        message: data.deletedFromDrive
+          ? 'Video deleted from Google Drive and unlinked from lesson!'
+          : 'Video unlinked from lesson (file not found or already deleted in Drive).',
+        type: 'success',
+      });
+      setTimeout(() => setStatusAlert(null), 5000);
+    } catch (err: any) {
+      setStatusAlert({
+        message: err?.message || 'Failed to delete video from Google Drive.',
+        type: 'error',
+      });
+      setTimeout(() => setStatusAlert(null), 5000);
+    } finally {
+      setDeletingDriveVideo(false);
     }
   };
 
@@ -1296,13 +1399,26 @@ export default function UnifiedCurriculumManagerPage() {
                           className="w-full pl-10 pr-24 py-2.5 bg-white border border-[#DCE6F1] rounded-xl font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#1266D5]/30 focus:border-[#1266D5]"
                         />
                         {lessonFormData.videoDriveId ? (
-                          <button
-                            type="button"
-                            onClick={() => setLessonFormData({ ...lessonFormData, videoDriveId: '' })}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            Clear
-                          </button>
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={handleDeleteDriveVideo}
+                              disabled={deletingDriveVideo}
+                              title="Permanently delete video from Google Drive & lesson"
+                              className="px-2 py-1 text-[11px] font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-60 rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              {deletingDriveVideo ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                              <span>{deletingDriveVideo ? 'Deleting...' : 'Delete'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLessonFormData({ ...lessonFormData, videoDriveId: '' })}
+                              className="px-2 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              title="Unlink only (keep file in Drive)"
+                            >
+                              Clear
+                            </button>
+                          </div>
                         ) : (
                           <button
                             type="button"
@@ -1460,17 +1576,28 @@ export default function UnifiedCurriculumManagerPage() {
                               <Play size={11} className="fill-current" />
                               <span>Open Theater Player</span>
                             </button>
+                            <button
+                              type="button"
+                              onClick={handleDeleteDriveVideo}
+                              disabled={deletingDriveVideo}
+                              className="px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-60"
+                              title="Delete video from Google Drive and unlink from lesson"
+                            >
+                              {deletingDriveVideo ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                              <span>{deletingDriveVideo ? 'Deleting...' : 'Delete from Drive'}</span>
+                            </button>
                             <span className="text-[10.5px] font-mono text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">
                               ID: {lessonFormData.videoDriveId}
                             </span>
                           </div>
                         </div>
                         <div className="rounded-2xl overflow-hidden bg-black aspect-video max-h-80 border-2 border-slate-700 shadow-lg flex items-center justify-center relative group">
-                          <iframe
-                            src={`https://drive.google.com/file/d/${extractGoogleDriveId(lessonFormData.videoDriveId)}/preview`}
-                            className="w-full h-full border-0 bg-black"
-                            allow="autoplay; fullscreen; encrypted-media"
-                            title="Video Preview"
+                          <video
+                            key={`modal-preview-${extractGoogleDriveId(lessonFormData.videoDriveId)}`}
+                            controls
+                            preload="metadata"
+                            src={`/api/video/stream/${extractGoogleDriveId(lessonFormData.videoDriveId)}`}
+                            className="w-full h-full object-contain bg-black"
                           />
                         </div>
                       </div>

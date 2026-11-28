@@ -192,7 +192,8 @@ export async function initiateResumableDriveUpload(
   fileSize: number,
   mimeType: string,
   systemName: string,
-  moduleName: string
+  moduleName: string,
+  origin?: string
 ): Promise<{ uploadUrl: string; moduleFolderId: string }> {
   if (!CLIENT_ID || !CLIENT_SECRET || CLIENT_ID.includes('mock')) {
     throw new Error('Google Drive integration is not configured.');
@@ -237,7 +238,7 @@ export async function initiateResumableDriveUpload(
     throw new Error('Google Drive authorization expired (invalid_grant).');
   }
 
-  // 4. Initiate Resumable Upload with Google Drive API
+  // 4. Initiate Resumable Upload with Google Drive API (Include Origin header so Google returns CORS headers for browser PUT!)
   const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
     method: 'POST',
     headers: {
@@ -245,6 +246,7 @@ export async function initiateResumableDriveUpload(
       'Content-Type': 'application/json; charset=UTF-8',
       'X-Upload-Content-Type': mimeType || 'video/mp4',
       ...(fileSize > 0 ? { 'X-Upload-Content-Length': String(fileSize) } : {}),
+      ...(origin ? { Origin: origin } : {}),
     },
     body: JSON.stringify({
       name: fileName,
@@ -264,5 +266,54 @@ export async function initiateResumableDriveUpload(
   }
 
   return { uploadUrl, moduleFolderId };
+}
+
+// Recover recently uploaded file ID by filename (fallback if browser CORS blocks reading PUT 200 response)
+export async function findRecentDriveFile(fileName: string, folderId?: string): Promise<string | null> {
+  try {
+    const drive = (await getActiveDriveClient()) || getDriveClient();
+    if (!drive) return null;
+
+    const escapedName = fileName.replace(/'/g, "\\'");
+    const q = folderId
+      ? `name='${escapedName}' and '${folderId}' in parents and trashed=false`
+      : `name='${escapedName}' and trashed=false`;
+
+    const res = await drive.files.list({
+      q,
+      orderBy: 'createdTime desc',
+      pageSize: 1,
+      fields: 'files(id, name, createdTime)',
+      spaces: 'drive',
+    });
+
+    if (res.data.files && res.data.files.length > 0) {
+      return res.data.files[0].id || null;
+    }
+    return null;
+  } catch (err: any) {
+    console.warn('findRecentDriveFile error:', err?.message);
+    return null;
+  }
+}
+
+// Permanently delete a file from Google Drive
+export async function deleteDriveFile(fileId: string): Promise<{ deleted: boolean; error?: string }> {
+  try {
+    const drive = (await getActiveDriveClient()) || getDriveClient();
+    if (!drive) {
+      return { deleted: false, error: 'Google Drive client not configured.' };
+    }
+    await drive.files.delete({ fileId });
+    return { deleted: true };
+  } catch (err: any) {
+    const status = err?.code || err?.response?.status;
+    if (status === 404) {
+      // Already deleted from Google Drive
+      return { deleted: true };
+    }
+    console.error('deleteDriveFile error:', err?.message);
+    return { deleted: false, error: err?.message || 'Failed to delete file from Google Drive' };
+  }
 }
 

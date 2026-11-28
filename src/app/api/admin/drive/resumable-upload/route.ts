@@ -14,12 +14,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'fileName is required' }, { status: 400 });
     }
 
+    const origin = req.headers.get('origin') || req.nextUrl.origin;
+
     const { uploadUrl, moduleFolderId } = await initiateResumableDriveUpload(
       fileName,
       fileSize || 0,
       mimeType || 'video/mp4',
       systemName || 'BTOS',
-      moduleName || 'General Module'
+      moduleName || 'General Module',
+      origin
     );
 
     return NextResponse.json({
