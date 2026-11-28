@@ -290,6 +290,8 @@ export interface IAuditLog extends Document {
   action: string;
   resourceType: string;
   resourceId?: string;
+  ipAddress?: string;
+  userAgent?: string;
   details?: Record<string, unknown>;
   createdAt: Date;
 }
@@ -301,6 +303,8 @@ const AuditLogSchema = new Schema<IAuditLog>(
     action: { type: String, required: true },
     resourceType: { type: String, required: true, index: true },
     resourceId: { type: String },
+    ipAddress: { type: String, index: true },
+    userAgent: { type: String },
     details: { type: Schema.Types.Mixed },
   },
   { timestamps: true }

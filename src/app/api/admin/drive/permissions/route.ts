@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
 import { makeDriveFilePublic, findRecentDriveFile } from '@/lib/googleDrive';
 import { connectDB } from '@/lib/db';
-import { LessonModel, VideoModel, AuditLogModel } from '@/models';
+import { LessonModel, VideoModel } from '@/models';
+import { recordAuditLog } from '@/lib/audit';
 
 export async function POST(req: NextRequest) {
   const adminCheck = await requireAdmin();
@@ -81,18 +82,15 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        try {
-          await AuditLogModel.create({
-            adminId: adminCheck.userId,
-            adminUsername: adminCheck.username,
-            action: 'DRIVE_VIDEO_LINKED_TO_LESSON',
-            resourceType: 'Lesson',
-            resourceId: lessonId,
-            details: { fileId, systemId, moduleId, title },
-          });
-        } catch (auditErr: any) {
-          console.warn('AuditLog warning:', auditErr?.message);
-        }
+        await recordAuditLog({
+          req,
+          userId: adminCheck.userId,
+          username: adminCheck.username,
+          action: 'DRIVE_VIDEO_LINKED_TO_LESSON',
+          resourceType: 'Lesson',
+          resourceId: lessonId,
+          details: { fileId, systemId, moduleId, title },
+        });
       }
     }
 

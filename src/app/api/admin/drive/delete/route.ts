@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
 import { deleteDriveFile } from '@/lib/googleDrive';
 import { connectDB } from '@/lib/db';
-import { LessonModel, VideoModel, AuditLogModel } from '@/models';
+import { LessonModel, VideoModel } from '@/models';
+import { recordAuditLog } from '@/lib/audit';
 
 function extractCleanId(raw: string): string {
   const fileMatch = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
@@ -53,18 +54,15 @@ export async function DELETE(req: NextRequest) {
         { $unset: { videoDriveId: '', videoUrl: '' } }
       );
 
-      try {
-        await AuditLogModel.create({
-          adminId: adminCheck.userId,
-          adminUsername: adminCheck.username,
-          action: 'DRIVE_VIDEO_DELETED',
-          resourceType: 'DriveFile',
-          resourceId: cleanId,
-          details: { lessonId, deletedFromDrive: driveRes.deleted },
-        });
-      } catch (auditErr: any) {
-        console.warn('AuditLog warning:', auditErr?.message);
-      }
+      await recordAuditLog({
+        req,
+        userId: adminCheck.userId,
+        username: adminCheck.username,
+        action: 'DRIVE_VIDEO_DELETED',
+        resourceType: 'DriveFile',
+        resourceId: cleanId,
+        details: { lessonId, deletedFromDrive: driveRes.deleted },
+      });
     }
 
     return NextResponse.json({

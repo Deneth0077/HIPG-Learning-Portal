@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { connectDB } from '@/lib/db';
-import { User, AuditLogModel } from '@/models';
+import { User } from '@/models';
 import { verifyPassword, setAuthCookie, hashPassword } from '@/lib/auth';
+import { recordAuditLog } from '@/lib/audit';
 
 const LoginSchema = z.object({
   username: z.string().min(1, 'Username is required').trim(),
@@ -111,10 +112,26 @@ export async function POST(req: NextRequest) {
     }
 
     if (!user) {
+      await recordAuditLog({
+        req,
+        userId: 'unknown',
+        username: lowerUser,
+        action: 'LOGIN_FAILED',
+        resourceType: 'Session',
+        resourceId: 'Invalid username',
+      });
       return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 });
     }
 
     if (!user.isActive) {
+      await recordAuditLog({
+        req,
+        userId: user._id.toString(),
+        username: user.username,
+        action: 'LOGIN_BLOCKED',
+        resourceType: 'Session',
+        resourceId: 'Account deactivated',
+      });
       return NextResponse.json(
         { error: 'Account has been deactivated. Please contact the administrator.' },
         { status: 403 }
@@ -133,6 +150,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (!isValid) {
+      await recordAuditLog({
+        req,
+        userId: user._id.toString(),
+        username: user.username,
+        action: 'LOGIN_FAILED',
+        resourceType: 'Session',
+        resourceId: 'Invalid password',
+      });
       return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 });
     }
 
@@ -146,6 +171,16 @@ export async function POST(req: NextRequest) {
       username: user.username,
       role: user.role,
       fullName: user.fullName,
+    });
+
+    await recordAuditLog({
+      req,
+      userId: user._id.toString(),
+      username: user.username,
+      action: 'LOGIN_SUCCESS',
+      resourceType: 'Session',
+      resourceId: `${user.role} Authenticated (${user.fullName})`,
+      details: { role: user.role, department: user.department },
     });
 
     return NextResponse.json({
